@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>廚房計時人員出勤預排班表 - 五甲國中</title>
+    <style>
+        body { font-family: "Microsoft JhengHei", sans-serif; padding: 20px; background-color: #f9f9f9; }
+        .container { max-width: 900px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        h2 { text-align: center; color: #333; }
+        .controls { display: flex; justify-content: center; gap: 15px; margin-bottom: 20px; align-items: center; flex-wrap: wrap; }
+        select, button, input[type="text"] { padding: 8px; font-size: 16px; border: 1px solid #ccc; border-radius: 4px; }
+        button { background-color: #4CAF50; color: white; border: none; cursor: pointer; }
+        button:hover { background-color: #45a049; }
+        button:disabled { background-color: #999; cursor: not-allowed; }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        th, td { border: 1px solid #ccc; padding: 10px; text-align: center; }
+        th { background-color: #f2f2f2; }
+        .holiday-note { color: #d9534f; font-size: 0.9em; margin-bottom: 15px; text-align: center; font-weight: bold; }
+        .deadline-warning { color: white; background-color: #d9534f; padding: 10px; border-radius: 5px; text-align: center; margin-bottom: 15px; display: none; }
+        .summer-vacation-msg { color: #2a6496; background-color: #d9edf7; padding: 20px; border-radius: 5px; text-align: center; font-size: 1.2em; font-weight: bold; margin: 20px 0; border: 1px solid #bce8f1; display: none; }
+        input:disabled { background-color: #eee; cursor: not-allowed; border: 1px dashed #ccc; }
+        select.leave-status { color: red; font-weight: bold; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>廚房計時人員出勤預排班表 (五甲國中)</h2>
+    
+    <div id="deadlineMsg" class="deadline-warning"></div>
+    <div id="summerMsg" class="summer-vacation-msg"></div>
+
+    <div class="controls">
+        <label>選擇填寫月份：</label>
+        <select id="yearSelect" onchange="checkDeadline()"></select> 年
+        <select id="monthSelect" onchange="checkDeadline()"></select> 月
+        <button id="genBtn" onclick="generateSchedule()">產生預覽</button>
+    </div>
+
+    <div class="holiday-note">
+        註：系統已排除例假日、國定假日。8月份僅需填寫開學日 (8/31) 之班表。
+    </div>
+
+    <form id="scheduleForm">
+        <table id="scheduleTable">
+            <thead>
+                <tr>
+                    <th>序號</th>
+                    <th>日期</th>
+                    <th>星期</th>
+                    <th>排班 1</th>
+                    <th>排班 2</th>
+                    <th>代班人員 (請假才填寫)</th>
+                </tr>
+            </thead>
+            <tbody id="tableBody"></tbody>
+        </table>
+        <div style="text-align: center; margin-top: 20px;">
+            <button type="button" id="submitBtn" onclick="submitData()" style="padding: 12px 40px; font-size: 18px; border-radius: 30px;">確認並送出班表</button>
+        </div>
+    </form>
+</div>
+
+<script>
+    const API_URL = "https://script.google.com/macros/s/AKfycbyYt9OjXf8rxAmOAEkQ1-hlfuEyXjQe9NvxxxbqR-gTWH6MaVlaM_u9egYUvq46zTU/exec"; 
+    
+    const defaultStaff = ["溫美萍", "郭恒妘"];
+    const nationalHolidays = [ 
+        "2026-04-03", "2026-04-06", "2026-05-01", "2026-06-19",
+        "2026-09-25", "2026-09-28", "2026-10-09", "2026-10-26", "2026-12-25"
+    ];
+
+    window.onload = function() {
+        const today = new Date();
+        const yearSelect = document.getElementById('yearSelect');
+        const monthSelect = document.getElementById('monthSelect');
+        const currentYear = today.getFullYear();
+        
+        for(let i = currentYear; i <= currentYear + 1; i++) {
+            let opt = document.createElement('option'); opt.value = i; opt.innerHTML = i; yearSelect.appendChild(opt);
+        }
+        for(let i = 1; i <= 12; i++) {
+            let opt = document.createElement('option'); opt.value = i; opt.innerHTML = i; monthSelect.appendChild(opt);
+        }
+
+        let nextMonthDate = new Date(today.getFullYear(), today.getMonth() + 1, 1);
+        yearSelect.value = nextMonthDate.getFullYear();
+        monthSelect.value = nextMonthDate.getMonth() + 1;
+
+        checkDeadline(); 
+        generateSchedule();
+    };
+
+    function checkDeadline() {
+        const targetYear = parseInt(document.getElementById('yearSelect').value);
+        const targetMonth = parseInt(document.getElementById('monthSelect').value);
+        const now = new Date();
+        const msgDiv = document.getElementById('deadlineMsg');
+        const summerDiv = document.getElementById('summerMsg');
+        const submitBtn = document.getElementById('submitBtn');
+        const genBtn = document.getElementById('genBtn');
+        const form = document.getElementById('scheduleForm');
+
+        // ★ 只有 7 月份全月鎖定
+        if (targetMonth === 7) {
+            summerDiv.style.display = "block";
+            summerDiv.innerHTML = "🏖️ 7月份為暑假期間，全月不須填寫排班表。";
+            msgDiv.style.display = "none";
+            submitBtn.disabled = true;
+            genBtn.disabled = true;
+            form.style.display = "none";
+            return;
+        } else {
+            summerDiv.style.display = "none";
+            form.style.display = "block";
+        }
+        
+        let prevMonthDate = new Date(targetYear, targetMonth - 1, 0); 
+        while (prevMonthDate.getDay() === 0 || prevMonthDate.getDay() === 6 || isNationalHoliday(prevMonthDate)) {
+            prevMonthDate.setDate(prevMonthDate.getDate() - 1);
+        }
+
+        const deadline = new Date(prevMonthDate.getFullYear(), prevMonthDate.getMonth(), prevMonthDate.getDate(), 12, 0, 0);
+        const formattedDeadline = `${deadline.getFullYear()-1911}年${deadline.getMonth()+1}月${deadline.getDate()}日 中午 12:00`;
+
+        if (now > deadline) {
+            msgDiv.style.display = "block";
+            msgDiv.style.backgroundColor = "#d9534f";
+            msgDiv.innerHTML = `⚠️ 提交期限已過！<br>${targetMonth}月班表的截止時間為：${formattedDeadline}。<br>目前已無法提交資料。`;
+            submitBtn.disabled = true; genBtn.disabled = true;
+        } else {
+            msgDiv.style.display = "block";
+            msgDiv.style.backgroundColor = "#5bc0de"; 
+            msgDiv.innerHTML = `📅 填寫提醒：${targetMonth}月班表請於 ${formattedDeadline} 前提交完畢。`;
+            submitBtn.disabled = false; genBtn.disabled = false;
+        }
+    }
+
+    function isNationalHoliday(date) {
+        let dateString = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+        return nationalHolidays.includes(dateString);
+    }
+
+    function generateSchedule() {
+        const year = parseInt(document.getElementById('yearSelect').value);
+        const month = parseInt(document.getElementById('monthSelect').value);
+        const tbody = document.getElementById('tableBody');
+        tbody.innerHTML = '';
+        
+        // 7月不產生表格
+        if (month === 7) return;
+
+        const lastDay = new Date(year, month, 0).getDate();
+        const weekdays = ['日', '一', '二', '三', '四', '五', '六'];
+        let seq = 1;
+
+        for (let day = 1; day <= lastDay; day++) {
+            // ★ 8月份的 1~30 號直接跳過不排班
+            if (month === 8 && day <= 30) continue;
+
+            let currentDate = new Date(year, month - 1, day);
+            if (currentDate.getDay() !== 0 && currentDate.getDay() !== 6 && !isNationalHoliday(currentDate)) {
+                let dateStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                let tr = document.createElement('tr');
+                tr.id = `row_${dateStr}`;
+                tr.innerHTML = `
+                    <td>${seq}</td>
+                    <td>${month}月${day}日</td>
+                    <td>${weekdays[currentDate.getDay()]}</td>
+                    <td><select onchange="checkLeave('${dateStr}')"><option value="${defaultStaff[0]}">${defaultStaff[0]}</option><option value="請假">請假</option></select></td>
+                    <td><select onchange="checkLeave('${dateStr}')"><option value="${defaultStaff[1]}">${defaultStaff[1]}</option><option value="請假">請假</option></select></td>
+                    <td><input type="text" id="sub_${dateStr}" placeholder="輸入代班姓名" disabled></td>
+                `;
+                tbody.appendChild(tr);
+                seq++;
+            }
+        }
+    }
+
+    function checkLeave(dateStr) {
+        const selects = document.querySelectorAll(`#row_${dateStr} select`);
+        const subInput = document.getElementById(`sub_${dateStr}`);
+        let isAnyLeave = Array.from(selects).some(s => s.value === "請假");
+        subInput.disabled = !isAnyLeave;
+        if (!isAnyLeave) subInput.value = "";
+    }
+
+    function submitData() {
+        const year = document.getElementById('yearSelect').value;
+        const month = document.getElementById('monthSelect').value;
+        const rows = document.querySelectorAll('#tableBody tr');
+        let finalData = [];
+        let hasError = false;
+
+        rows.forEach(row => {
+            const dateStr = row.id.replace('row_', '');
+            const selects = row.querySelectorAll('select');
+            const sub = document.getElementById(`sub_${dateStr}`).value.trim();
+            if ((selects[0].value === "請假" || selects[1].value === "請假") && sub === "") hasError = true;
+            finalData.push({ date: dateStr, staff1: selects[0].value, staff2: selects[1].value, substitute: sub });
+        });
+
+        if (hasError) { alert("請填寫代班人員姓名！"); return; }
+        
+        const btn = document.getElementById('submitBtn');
+        btn.innerText = "資料傳送中...";
+        btn.disabled = true;
+
+        const payload = { year: year, month: month, finalData: finalData };
+
+        fetch(API_URL, {
+            method: 'POST',
+            body: JSON.stringify(payload),
+            headers: { 'Content-Type': 'text/plain;charset=utf-8' }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === 'success') {
+                alert(`${year}年${month}月 班表已成功傳送至 Google 試算表！`);
+                location.reload();
+            } else {
+                alert("提交失敗：" + data.message);
+                btn.innerText = "確認並送出班表";
+                btn.disabled = false;
+            }
+        })
+        .catch(error => {
+            alert("網路連線錯誤，請重試！(" + error + ")");
+            btn.innerText = "確認並送出班表";
+            btn.disabled = false;
+        });
+    }
+</script>
+</body>
+</html>
