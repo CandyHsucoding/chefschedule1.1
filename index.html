@@ -19,6 +19,7 @@
         .holiday-note { color: #d9534f; font-size: 0.9em; margin-bottom: 15px; text-align: center; font-weight: bold; }
         .deadline-warning { color: white; background-color: #d9534f; padding: 10px; border-radius: 5px; text-align: center; margin-bottom: 15px; display: none; }
         .summer-vacation-msg { color: #2a6496; background-color: #d9edf7; padding: 20px; border-radius: 5px; text-align: center; font-size: 1.2em; font-weight: bold; margin: 20px 0; border: 1px solid #bce8f1; display: none; }
+        .save-status { color: #31708f; background-color: #eef7fb; border: 1px solid #bce8f1; border-radius: 5px; padding: 8px 12px; margin-bottom: 12px; text-align: center; display: none; }
         input:disabled { background-color: #eee; cursor: not-allowed; border: 1px dashed #ccc; }
         select.leave-status { color: red; font-weight: bold; }
     </style>
@@ -30,6 +31,7 @@
     
     <div id="deadlineMsg" class="deadline-warning"></div>
     <div id="summerMsg" class="summer-vacation-msg"></div>
+    <div id="saveStatus" class="save-status"></div>
 
     <div class="controls">
         <label>選擇填寫月份：</label>
@@ -64,6 +66,7 @@
 
 <script>
     const API_URL = "https://script.google.com/macros/s/AKfycbyYt9OjXf8rxAmOAEkQ1-hlfuEyXjQe9NvxxxbqR-gTWH6MaVlaM_u9egYUvq46zTU/exec"; 
+    const STORAGE_PREFIX = "chefScheduleDraft";
     
     const defaultStaff = ["溫美萍", "郭恒妘"];
     const nationalHolidays = [ 
@@ -142,6 +145,78 @@
         return nationalHolidays.includes(dateString);
     }
 
+    function getStorageKey(year, month) {
+        return `${STORAGE_PREFIX}:${year}-${String(month).padStart(2, '0')}`;
+    }
+
+    function showSaveStatus(message) {
+        const status = document.getElementById('saveStatus');
+        status.innerText = message;
+        status.style.display = "block";
+    }
+
+    function collectScheduleData() {
+        const rows = document.querySelectorAll('#tableBody tr');
+        let finalData = [];
+        let hasError = false;
+
+        rows.forEach(row => {
+            const dateStr = row.id.replace('row_', '');
+            const selects = row.querySelectorAll('select');
+            const sub = document.getElementById(`sub_${dateStr}`).value.trim();
+            if ((selects[0].value === "請假" || selects[1].value === "請假") && sub === "") hasError = true;
+            finalData.push({ date: dateStr, staff1: selects[0].value, staff2: selects[1].value, substitute: sub });
+        });
+
+        return { finalData, hasError };
+    }
+
+    function saveDraft(isSubmitted = false) {
+        const year = document.getElementById('yearSelect').value;
+        const month = document.getElementById('monthSelect').value;
+        const { finalData } = collectScheduleData();
+        const payload = {
+            year,
+            month,
+            finalData,
+            submitted: isSubmitted,
+            savedAt: new Date().toISOString()
+        };
+
+        localStorage.setItem(getStorageKey(year, month), JSON.stringify(payload));
+        showSaveStatus(isSubmitted ? "已送出，並已在此瀏覽器暫存本次填報資料。" : "已自動暫存填報資料。");
+    }
+
+    function loadDraft(year, month) {
+        const raw = localStorage.getItem(getStorageKey(year, month));
+        if (!raw) {
+            document.getElementById('saveStatus').style.display = "none";
+            return;
+        }
+
+        try {
+            const draft = JSON.parse(raw);
+            if (!Array.isArray(draft.finalData)) return;
+
+            draft.finalData.forEach(item => {
+                const row = document.getElementById(`row_${item.date}`);
+                if (!row) return;
+
+                const selects = row.querySelectorAll('select');
+                if (selects[0]) selects[0].value = item.staff1;
+                if (selects[1]) selects[1].value = item.staff2;
+
+                checkLeave(item.date);
+                const subInput = document.getElementById(`sub_${item.date}`);
+                if (subInput) subInput.value = item.substitute || "";
+            });
+
+            showSaveStatus(draft.submitted ? "已載入上次送出後的暫存資料。" : "已載入尚未送出的暫存資料。");
+        } catch (error) {
+            localStorage.removeItem(getStorageKey(year, month));
+        }
+    }
+
     function generateSchedule() {
         const year = parseInt(document.getElementById('yearSelect').value);
         const month = parseInt(document.getElementById('monthSelect').value);
@@ -168,14 +243,16 @@
                     <td>${seq}</td>
                     <td>${month}月${day}日</td>
                     <td>${weekdays[currentDate.getDay()]}</td>
-                    <td><select onchange="checkLeave('${dateStr}')"><option value="${defaultStaff[0]}">${defaultStaff[0]}</option><option value="請假">請假</option></select></td>
-                    <td><select onchange="checkLeave('${dateStr}')"><option value="${defaultStaff[1]}">${defaultStaff[1]}</option><option value="請假">請假</option></select></td>
-                    <td><input type="text" id="sub_${dateStr}" placeholder="輸入代班姓名" disabled></td>
+                    <td><select onchange="checkLeave('${dateStr}'); saveDraft();"><option value="${defaultStaff[0]}">${defaultStaff[0]}</option><option value="請假">請假</option></select></td>
+                    <td><select onchange="checkLeave('${dateStr}'); saveDraft();"><option value="${defaultStaff[1]}">${defaultStaff[1]}</option><option value="請假">請假</option></select></td>
+                    <td><input type="text" id="sub_${dateStr}" placeholder="輸入代班姓名" oninput="saveDraft()" disabled></td>
                 `;
                 tbody.appendChild(tr);
                 seq++;
             }
         }
+
+        loadDraft(year, month);
     }
 
     function checkLeave(dateStr) {
@@ -189,17 +266,7 @@
     function submitData() {
         const year = document.getElementById('yearSelect').value;
         const month = document.getElementById('monthSelect').value;
-        const rows = document.querySelectorAll('#tableBody tr');
-        let finalData = [];
-        let hasError = false;
-
-        rows.forEach(row => {
-            const dateStr = row.id.replace('row_', '');
-            const selects = row.querySelectorAll('select');
-            const sub = document.getElementById(`sub_${dateStr}`).value.trim();
-            if ((selects[0].value === "請假" || selects[1].value === "請假") && sub === "") hasError = true;
-            finalData.push({ date: dateStr, staff1: selects[0].value, staff2: selects[1].value, substitute: sub });
-        });
+        const { finalData, hasError } = collectScheduleData();
 
         if (hasError) { alert("請填寫代班人員姓名！"); return; }
         
@@ -217,6 +284,7 @@
         .then(response => response.json())
         .then(data => {
             if (data.status === 'success') {
+                saveDraft(true);
                 alert(`${year}年${month}月 班表已成功傳送至 Google 試算表！`);
                 location.reload();
             } else {
