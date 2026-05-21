@@ -216,12 +216,17 @@
             select, button, input[type="text"], textarea { font-size: 15px; }
         }
 
+        @page {
+            size: A4 portrait;
+            margin: 7mm;
+        }
+
         @media print {
             * {
                 -webkit-print-color-adjust: exact !important;
                 print-color-adjust: exact !important;
             }
-            body { background: #fff; padding: 0; }
+            body { background: #fff; padding: 0; margin: 0; }
             .container { box-shadow: none; max-width: none; padding: 0; }
             .no-print { display: none !important; }
             #printArea { display: block !important; }
@@ -230,7 +235,8 @@
                 page-break-after: always;
                 break-inside: avoid;
                 page-break-inside: avoid;
-                padding: 12mm;
+                min-height: 0;
+                padding: 0;
             }
             .print-sheet:last-child {
                 break-after: auto;
@@ -238,20 +244,32 @@
             }
             .print-title {
                 text-align: center;
-                font-size: 22px;
+                font-size: 18px;
                 font-weight: 700;
-                margin: 0 0 4px;
+                margin: 0 0 2px;
             }
             .print-month {
                 text-align: center;
-                font-size: 18px;
-                margin: 0 0 10px;
+                font-size: 15px;
+                margin: 0 0 5px;
             }
-            .print-sheet table { font-size: 16px; }
+            .print-sheet table {
+                table-layout: fixed;
+                font-size: 12px;
+                line-height: 1.15;
+                margin-top: 0;
+            }
             .print-sheet th, .print-sheet td {
                 border: 1px solid #000;
-                padding: 7px;
-                height: 34px;
+                padding: 2px 4px;
+                height: 22px;
+            }
+            .print-sheet th {
+                font-weight: 700;
+            }
+            .print-sheet .name-chip {
+                min-width: 56px;
+                padding: 2px 5px;
             }
         }
     </style>
