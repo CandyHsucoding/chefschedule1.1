@@ -161,6 +161,43 @@
             padding: 12px;
             border-radius: 8px;
         }
+        .admin-toggle {
+            display: flex;
+            justify-content: flex-end;
+            margin-top: 18px;
+        }
+        .admin-panel {
+            display: none;
+            border-color: #b7c8d0;
+            background: #fbfdfd;
+        }
+        .admin-panel.active { display: block; }
+        .color-grid {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 12px;
+        }
+        .color-card {
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            padding: 12px;
+            background: var(--soft);
+        }
+        .color-card input[type="color"] {
+            width: 100%;
+            height: 40px;
+            padding: 2px;
+            border: 1px solid #b8c5cc;
+            border-radius: 4px;
+            background: #fff;
+        }
+        .name-chip {
+            display: inline-block;
+            min-width: 72px;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-weight: 700;
+        }
         input:disabled, select:disabled {
             background-color: #eef0f1;
             cursor: not-allowed;
@@ -174,6 +211,7 @@
             body { padding: 10px; }
             .container { padding: 14px; }
             .merge-grid { grid-template-columns: 1fr; }
+            .color-grid { grid-template-columns: 1fr; }
             th, td { padding: 7px 5px; font-size: 14px; }
             select, button, input[type="text"], textarea { font-size: 15px; }
         }
@@ -240,7 +278,6 @@
                         <th>星期</th>
                         <th>我的出勤狀態</th>
                         <th>代班人員 (請假才填寫)</th>
-                        <th>合併後排班</th>
                     </tr>
                 </thead>
                 <tbody id="tableBody"></tbody>
@@ -250,31 +287,36 @@
             </div>
         </form>
 
-        <section class="section">
+        <div class="admin-toggle">
+            <button type="button" class="secondary" onclick="toggleAdminPanel()">管理者功能</button>
+        </div>
+
+        <section id="adminPanel" class="section admin-panel">
             <h3>兩人資料合併狀態</h3>
-            <p class="hint">兩位人員各自送出後，可把下方產生的「提交內容」給負責彙整的人匯入。兩人的資料都匯入後，就能產出完整出勤簽到表。</p>
+            <p class="hint">此區供管理者彙整兩位人員資料、產出簽到表與列印使用，一般填表人不需要操作。</p>
             <div id="mergeStatus" class="merge-grid"></div>
             <div class="button-row">
                 <button type="button" class="secondary" onclick="renderPrintableSheets()">產出兩人出勤簽到表</button>
                 <button type="button" class="secondary" onclick="printSheets()">列印 / 另存 PDF</button>
                 <button type="button" class="warning" onclick="clearMonthData()">清除本月暫存合併資料</button>
             </div>
-        </section>
 
-        <section class="section">
-            <h3>提交內容</h3>
-            <p class="hint">送出後會在這裡產生一段內容；另一位同仁或彙整者把內容貼到「匯入提交內容」即可合併。</p>
+            <h3 style="margin-top:22px;">簽到表顏色管理</h3>
+            <p class="hint">顏色會套用在簽到表「排班」欄，方便區分原排班人員與代班人員。</p>
+            <div id="colorSettings" class="color-grid"></div>
+
+            <h3 style="margin-top:22px;">提交內容</h3>
+            <p class="hint">管理者可在此產生目前選定填表人的提交內容，或由試算表資料整理後貼到下方匯入。</p>
             <div class="content-box">
-                <textarea id="submissionContent" readonly placeholder="送出成功後，這裡會顯示可複製的提交內容。"></textarea>
+                <textarea id="submissionContent" readonly placeholder="管理者按下產生後，這裡會顯示可複製的提交內容。"></textarea>
                 <div class="button-row">
+                    <button type="button" class="secondary" onclick="buildCurrentSubmissionContent()">產生目前填表人的提交內容</button>
                     <button type="button" class="secondary" onclick="copySubmissionContent()">複製提交內容</button>
                 </div>
             </div>
-        </section>
 
-        <section class="section">
-            <h3>匯入提交內容</h3>
-            <p class="hint">貼上另一位人員送出的提交內容，再按匯入。系統會依月份與姓名合併，不會覆蓋其他月份。</p>
+            <h3 style="margin-top:22px;">匯入提交內容</h3>
+            <p class="hint">貼上提交內容，再按匯入。系統會依月份與姓名合併，不會覆蓋其他月份。</p>
             <textarea id="importContent" placeholder="請貼上提交內容"></textarea>
             <div class="button-row">
                 <button type="button" onclick="importSubmissionContent()">匯入並合併</button>
@@ -288,7 +330,13 @@
 <script>
     const API_URL = "https://script.google.com/macros/s/AKfycbyYt9OjXf8rxAmOAEkQ1-hlfuEyXjQe9NvxxxbqR-gTWH6MaVlaM_u9egYUvq46zTU/exec";
     const STORAGE_PREFIX = "chefScheduleMerged";
+    const COLOR_STORAGE_KEY = "chefScheduleNameColors";
     const defaultStaff = ["溫美萍", "郭恒妘"];
+    const defaultNameColors = {
+        "溫美萍": "#dff3e8",
+        "郭恒妘": "#e4efff",
+        "代班人員": "#fff1c7"
+    };
     const nationalHolidays = [
         "2026-04-03", "2026-04-06", "2026-05-01", "2026-06-19",
         "2026-09-25", "2026-09-28", "2026-10-09", "2026-10-26", "2026-12-25"
@@ -326,6 +374,7 @@
 
         checkDeadline();
         generateSchedule();
+        renderColorSettings();
     };
 
     function checkDeadline() {
@@ -448,6 +497,60 @@
         localStorage.setItem(getStorageKey(state.year, state.month), JSON.stringify(state));
     }
 
+    function loadNameColors() {
+        const raw = localStorage.getItem(COLOR_STORAGE_KEY);
+        if (!raw) return { ...defaultNameColors };
+
+        try {
+            return { ...defaultNameColors, ...JSON.parse(raw) };
+        } catch (error) {
+            localStorage.removeItem(COLOR_STORAGE_KEY);
+            return { ...defaultNameColors };
+        }
+    }
+
+    function saveNameColors(colors) {
+        localStorage.setItem(COLOR_STORAGE_KEY, JSON.stringify(colors));
+    }
+
+    function getNameColor(name) {
+        const colors = loadNameColors();
+        return colors[name] || colors["代班人員"] || "#fff1c7";
+    }
+
+    function renderColorSettings() {
+        const colors = loadNameColors();
+        const container = document.getElementById('colorSettings');
+        if (!container) return;
+
+        container.innerHTML = [
+            ...defaultStaff.map(name => ({ key: name, label: name })),
+            { key: "代班人員", label: "代班人員" }
+        ].map(item => `
+            <div class="color-card">
+                <label for="color_${item.key}">${item.label}</label>
+                <input type="color" id="color_${item.key}" value="${colors[item.key]}" onchange="updateNameColor('${item.key}', this.value)">
+            </div>
+        `).join("");
+    }
+
+    function updateNameColor(name, color) {
+        const colors = loadNameColors();
+        colors[name] = color;
+        saveNameColors(colors);
+        renderPrintableSheets(false);
+        showSaveStatus("簽到表顏色已更新。");
+    }
+
+    function toggleAdminPanel() {
+        const panel = document.getElementById('adminPanel');
+        panel.classList.toggle('active');
+        if (panel.classList.contains('active')) {
+            renderMergeStatus();
+            renderColorSettings();
+        }
+    }
+
     function switchStaff() {
         loadPersonalDraft();
         renderMergeStatus();
@@ -476,7 +579,6 @@
                     </select>
                 </td>
                 <td><input type="text" id="sub_${day.date}" placeholder="輸入代班姓名" oninput="savePersonalDraft()" disabled></td>
-                <td id="merged_${day.date}"></td>
             `;
             tbody.appendChild(tr);
         });
@@ -528,7 +630,6 @@
         };
 
         saveMonthState(state);
-        renderMergedColumn(state);
         renderMergeStatus();
         showSaveStatus(isSubmitted ? "已送出，並已在此瀏覽器暫存本次填報資料。" : "已自動暫存目前填表人的資料。");
     }
@@ -552,7 +653,6 @@
             subInput.value = item && item.substitute ? item.substitute : "";
         });
 
-        renderMergedColumn(state);
         document.getElementById('saveStatus').style.display = submission ? "block" : "none";
         if (submission) showSaveStatus(submission.submitted ? "已載入此人員上次送出後的暫存資料。" : "已載入此人員尚未送出的暫存資料。");
     }
@@ -591,19 +691,11 @@
         });
     }
 
-    function renderMergedColumn(state) {
-        const finalData = mergeFinalData(state);
-        finalData.forEach(item => {
-            const cell = document.getElementById(`merged_${item.date}`);
-            if (!cell) return;
-            cell.innerHTML = `${defaultStaff[0]}：${item.staff1}<br>${defaultStaff[1]}：${item.staff2}`;
-        });
-    }
-
     function renderMergeStatus() {
         const { year, month } = getSelectedYearMonth();
         const state = loadMonthState(year, month);
         const container = document.getElementById('mergeStatus');
+        if (!container) return;
         container.innerHTML = "";
 
         defaultStaff.forEach(staff => {
@@ -640,6 +732,21 @@
             submittedAt: submission.submittedAt,
             rows: submission.rows
         }, null, 2);
+    }
+
+    function buildCurrentSubmissionContent() {
+        const { year, month } = getSelectedYearMonth();
+        const staff = getCurrentStaff();
+        const state = loadMonthState(year, month);
+        const submission = state.submissions[staff];
+
+        if (!submission || !Array.isArray(submission.rows)) {
+            alert("目前選定的填表人尚未有暫存或送出資料。");
+            return;
+        }
+
+        document.getElementById('submissionContent').value = buildSubmissionContent(staff, state);
+        showSaveStatus(`已產生 ${staff} 的提交內容。`);
     }
 
     function copySubmissionContent() {
@@ -750,9 +857,8 @@
                 successState.submissions[staff].savedAt = new Date().toISOString();
                 saveMonthState(successState);
                 const refreshedState = loadMonthState(year, month);
-                document.getElementById('submissionContent').value = buildSubmissionContent(staff, refreshedState);
                 renderMergeStatus();
-                alert(`${staff} 的 ${year}年${month}月班表已成功傳送。請複製下方提交內容給彙整者合併。`);
+                alert(`${staff} 的 ${year}年${month}月班表已成功傳送。`);
             } else {
                 alert("提交失敗：" + data.message);
             }
@@ -766,13 +872,13 @@
         });
     }
 
-    function renderPrintableSheets() {
+    function renderPrintableSheets(showMissingAlert = true) {
         const { year, month } = getSelectedYearMonth();
         const state = loadMonthState(year, month);
         const missing = defaultStaff.filter(staff => !state.submissions[staff] || !state.submissions[staff].submitted);
 
         if (missing.length > 0) {
-            alert(`尚未匯入或提交：${missing.join("、")}。請先合併兩人的提交內容，再產出完整簽到表。`);
+            if (showMissingAlert) alert(`尚未匯入或提交：${missing.join("、")}。請先合併兩人的提交內容，再產出完整簽到表。`);
             return false;
         }
 
@@ -788,12 +894,15 @@
         printArea.innerHTML = staffKeys.map(staff => {
             const rows = finalData.map((item, index) => {
                 const day = days.find(entry => entry.date === item.date);
+                const name = item[staff.key];
+                const isSubstitute = !defaultStaff.includes(name);
+                const background = getNameColor(isSubstitute ? "代班人員" : name);
                 return `
                     <tr>
                         <td>${index + 1}</td>
                         <td>${day.label}</td>
                         <td>${day.weekday}</td>
-                        <td>${item[staff.key]}</td>
+                        <td style="background:${background};"><span class="name-chip">${name}</span></td>
                         <td></td>
                     </tr>
                 `;
