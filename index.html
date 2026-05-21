@@ -217,15 +217,25 @@
         }
 
         @media print {
+            * {
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+            }
             body { background: #fff; padding: 0; }
             .container { box-shadow: none; max-width: none; padding: 0; }
             .no-print { display: none !important; }
             #printArea { display: block !important; }
             .print-sheet {
+                break-after: page;
                 page-break-after: always;
+                break-inside: avoid;
+                page-break-inside: avoid;
                 padding: 12mm;
             }
-            .print-sheet:last-child { page-break-after: auto; }
+            .print-sheet:last-child {
+                break-after: auto;
+                page-break-after: auto;
+            }
             .print-title {
                 text-align: center;
                 font-size: 22px;
