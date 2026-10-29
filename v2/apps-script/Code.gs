@@ -48,10 +48,17 @@ function doGet(e) {
 }
 
 function doPost(e) {
+  let payload;
+  try {
+    payload = JSON.parse(e.postData.contents);
+  } catch (error) {
+    return json_({ status: "error", message: "資料格式不正確" });
+  }
+  if (payload.action === "verifyAdmin") return json_(verifyAdmin_(payload.pin));
+
   const lock = LockService.getScriptLock();
   lock.waitLock(20000);
   try {
-    const payload = JSON.parse(e.postData.contents);
     const year = Number(payload.year);
     const month = Number(payload.month);
     const staff = String(payload.submittedBy || "");
@@ -71,6 +78,23 @@ function doPost(e) {
   } finally {
     lock.releaseLock();
   }
+}
+
+// 管理者 PIN 存在「專案設定 → 指令碼屬性」的 ADMIN_PIN，不寫在程式碼裡
+function verifyAdmin_(pin) {
+  const expected = PropertiesService.getScriptProperties().getProperty("ADMIN_PIN");
+  if (!expected) {
+    return { status: "error", message: "尚未設定管理者 PIN，請在 Apps Script「專案設定 → 指令碼屬性」新增 ADMIN_PIN。" };
+  }
+  const cache = CacheService.getScriptCache();
+  const fails = Number(cache.get("adminPinFails") || 0);
+  if (fails >= 5) return { status: "error", message: "PIN 錯誤次數過多，請 10 分鐘後再試。" };
+  if (String(pin || "") === expected) {
+    cache.remove("adminPinFails");
+    return { status: "success" };
+  }
+  cache.put("adminPinFails", String(fails + 1), 600);
+  return { status: "error", message: "PIN 碼錯誤。" };
 }
 
 function json_(obj) {

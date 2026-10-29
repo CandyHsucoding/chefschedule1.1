@@ -164,8 +164,14 @@
         .admin-toggle {
             display: flex;
             justify-content: flex-end;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 8px;
             margin-top: 18px;
         }
+        .admin-login { display: none; gap: 8px; align-items: center; }
+        .admin-login.active { display: flex; }
+        .admin-login input { width: 150px; }
         .admin-panel {
             display: none;
             border-color: #b7c8d0;
@@ -347,6 +353,10 @@
         </form>
 
         <div class="admin-toggle">
+            <div id="adminLogin" class="admin-login">
+                <input type="password" id="adminPin" inputmode="numeric" autocomplete="off" placeholder="請輸入管理者 PIN" onkeydown="if (event.key === 'Enter') verifyAdminPin()">
+                <button type="button" id="adminPinBtn" onclick="verifyAdminPin()">確認</button>
+            </div>
             <button type="button" class="secondary" onclick="toggleAdminPanel()">管理者功能</button>
         </div>
 
@@ -377,6 +387,7 @@
     const API_URL = "https://script.google.com/macros/s/AKfycbxDSYwI3Ho8E_7siAkiTKZ0NU_qHUL6YqRMZ3Ma_yTvq-uc88HtqiUI1gN9uO0uK1A/exec";
     const DRAFT_PREFIX = "chefScheduleV2Draft";
     const COLOR_STORAGE_KEY = "chefScheduleNameColors";
+    const ADMIN_SESSION_KEY = "chefScheduleV2Admin";
     const defaultStaff = ["溫美萍", "郭恒妘"];
     const defaultNameColors = {
         "溫美萍": "#dff3e8",
@@ -793,8 +804,52 @@
         ].join("\n");
     }
 
+    function isAdminUnlocked() {
+        try { return sessionStorage.getItem(ADMIN_SESSION_KEY) === "1"; } catch (error) { return false; }
+    }
+
+    // 驗證通過後，同一個分頁內不必重複輸入；關閉分頁即需重新輸入
     function toggleAdminPanel() {
+        if (!isAdminUnlocked()) {
+            const login = document.getElementById('adminLogin');
+            login.classList.toggle('active');
+            if (login.classList.contains('active')) document.getElementById('adminPin').focus();
+            return;
+        }
         document.getElementById('adminPanel').classList.toggle('active');
+    }
+
+    function verifyAdminPin() {
+        const input = document.getElementById('adminPin');
+        const btn = document.getElementById('adminPinBtn');
+        const pin = input.value.trim();
+        if (!pin) return;
+        if (!API_URL) {
+            alert("尚未設定雲端網址，無法驗證。");
+            return;
+        }
+
+        btn.disabled = true;
+        fetch(API_URL, {
+            method: 'POST',
+            body: JSON.stringify({ action: "verifyAdmin", pin }),
+            headers: { 'Content-Type': 'text/plain;charset=utf-8' }
+        })
+        .then(response => response.json())
+        .then(result => {
+            if (result.status !== 'success') throw new Error(result.message);
+            try { sessionStorage.setItem(ADMIN_SESSION_KEY, "1"); } catch (error) {}
+            document.getElementById('adminLogin').classList.remove('active');
+            document.getElementById('adminPanel').classList.add('active');
+        })
+        .catch(error => {
+            alert("無法開啟管理者功能：" + (error.message || error));
+            input.select();
+        })
+        .finally(() => {
+            input.value = "";
+            btn.disabled = false;
+        });
     }
 
     function findRow(submission, dateStr) {
