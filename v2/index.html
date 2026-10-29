@@ -169,6 +169,17 @@
             gap: 8px;
             margin-top: 18px;
         }
+        .month-event-note {
+            display: none;
+            margin: 8px auto 0;
+            max-width: 640px;
+            padding: 8px 12px;
+            border-radius: 6px;
+            background: #fff4e5;
+            border: 1px solid #f5c58a;
+            color: #8a4b00;
+        }
+        .month-event-note.active { display: block; }
         .admin-login { display: none; gap: 8px; align-items: center; }
         .admin-login.active { display: flex; }
         .admin-login input { width: 150px; }
@@ -331,6 +342,7 @@
 
         <div class="holiday-note">
             註：系統已排除例假日、國定假日，並加入學校活動的補班供餐日。8月份僅需填寫開學日 (8/31) 之班表。
+            <div id="monthEventNote" class="month-event-note"></div>
         </div>
 
         <form id="scheduleForm">
@@ -397,13 +409,15 @@
     const builtInHolidays = [
         "2026-01-01", "2026-02-16", "2026-02-17", "2026-02-18", "2026-02-19", "2026-02-20", "2026-02-27",
         "2026-04-03", "2026-04-06", "2026-05-01", "2026-06-19",
-        "2026-09-25", "2026-09-28", "2026-10-09", "2026-10-26", "2026-12-25",
-        "2026-12-21" // 五福國小校慶補假，不供餐
+        "2026-09-25", "2026-09-28", "2026-10-09", "2026-10-26", "2026-12-25"
     ];
-    // 週末但需要供餐的日期
-    const builtInWorkdays = [
-        "2026-12-19" // 五福國小校慶（週六）供餐
+    // 學校活動造成的供餐異動：serve 為 true 表示週末需供餐，false 表示平日不供餐；會顯示在該月份備註
+    const schoolEvents = [
+        { date: "2026-12-19", serve: true, note: "五福國小校慶，需供餐" },
+        { date: "2026-12-21", serve: false, note: "校慶補假，不供餐" }
     ];
+    const builtInWorkdays = schoolEvents.filter(event => event.serve).map(event => event.date);
+    schoolEvents.filter(event => !event.serve).forEach(event => builtInHolidays.push(event.date));
     let extraHolidays = [];
     let extraWorkdays = [];
     let monthData = { submissions: {} };
@@ -504,7 +518,23 @@
         return days;
     }
 
+    function renderMonthEventNote() {
+        const { year, month } = getSelectedYearMonth();
+        const weekdays = ['日', '一', '二', '三', '四', '五', '六'];
+        const prefix = monthKey(year, month);
+        const items = schoolEvents
+            .filter(event => event.date.startsWith(prefix))
+            .map(event => {
+                const date = new Date(year, month - 1, parseInt(event.date.slice(8)));
+                return `${month}/${date.getDate()}（${weekdays[date.getDay()]}）${event.note}`;
+            });
+        const box = document.getElementById('monthEventNote');
+        box.innerText = items.length ? `★ ${month}月供餐異動：${items.join("；")}。` : "";
+        box.classList.toggle('active', items.length > 0);
+    }
+
     function onMonthChange() {
+        renderMonthEventNote();
         monthData = { submissions: {} };
         loadedKey = "";
         checkDeadline();
