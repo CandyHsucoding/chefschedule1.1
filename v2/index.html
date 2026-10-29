@@ -973,7 +973,7 @@
             if (result.status !== 'success') throw new Error(result.message);
             applyMonthData(result.data, year, month);
             setSync(`已同步雲端資料（${formatDateTime(new Date().toISOString())}）`);
-            alert(`已登記：${shortLabel(date)} ${change}。` + (status === "請假" ? "\n\n請記得產生臨時代班勞保通知單交給總務處。" : ""));
+            alert(`已登記：${shortLabel(date)} ${change}。` + (status === "請假" ? "\n\n請記得執行「產生勞保通知單」選 2，把更新後的代班人員通知單交給總務處。" : ""));
         })
         .catch(error => {
             if (String(error.message).includes("PIN")) adminPinValue = "";
