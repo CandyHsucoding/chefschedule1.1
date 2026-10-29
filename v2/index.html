@@ -189,6 +189,14 @@
             background: #fbfdfd;
         }
         .admin-panel.active { display: block; }
+        .adjust-form {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px 16px;
+            align-items: center;
+        }
+        .adjust-form label { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+        .adjust-form select, .adjust-form input { padding: 6px; font-size: 15px; }
         .color-grid {
             display: grid;
             grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -380,6 +388,28 @@
                 <button type="button" class="secondary" onclick="renderPrintableSheets()">產出兩人出勤簽到表</button>
                 <button type="button" class="secondary" onclick="printSheets()">列印 / 另存 PDF</button>
             </div>
+
+            <h3 style="margin-top:22px;">臨時異動登記</h3>
+            <p class="hint">過了提交期限也能登記，月份以上方選擇的月份為準。登記後試算表、薪資「帶入排班表」都會用新的班表，並會寄信通知你。</p>
+            <div class="adjust-form">
+                <label>日期 <select id="adjustDate" onchange="renderAdjustCurrent()"></select></label>
+                <label>人員 <select id="adjustStaff" onchange="renderAdjustCurrent()"></select></label>
+                <label>異動 <select id="adjustStatus" onchange="toggleAdjustSubstitute()">
+                    <option value="請假">臨時請假</option>
+                    <option value="出勤">取消請假（改回出勤）</option>
+                </select></label>
+                <label id="adjustSubLabel">代班人員 <select id="adjustSubstitute" onchange="toggleAdjustSubstitute()">
+                    <option value="官麗珠">官麗珠</option>
+                    <option value="林金福">林金福</option>
+                    <option value="其他">其他…</option>
+                </select>
+                <input type="text" id="adjustOther" placeholder="輸入代班姓名" style="display:none;"></label>
+            </div>
+            <p class="hint" id="adjustCurrent"></p>
+            <div class="button-row">
+                <button type="button" id="adjustBtn" onclick="submitAdjust()">登記異動</button>
+            </div>
+            <p class="hint" id="adjustList"></p>
 
             <h3 style="margin-top:22px;">簽到表顏色管理</h3>
             <p class="hint">顏色會套用在簽到表「排班」欄，方便區分原排班人員與代班人員。</p>
@@ -610,7 +640,7 @@
         const holidaysChanged = holidays.join() !== extraHolidays.join() || workdays.join() !== extraWorkdays.join();
         extraHolidays = holidays;
         extraWorkdays = workdays;
-        monthData = { submissions: data.submissions || {} };
+        monthData = { submissions: data.submissions || {}, adjustments: data.adjustments || [] };
         loadedKey = monthKey(year, month);
         if (holidaysChanged) {
             checkDeadline();
@@ -724,6 +754,7 @@
 
         updateFormState();
         renderMergeStatus();
+        renderAdjustForm();
     }
 
     function updateFormState() {
@@ -856,6 +887,104 @@
         ].join("\n");
     }
 
+    // ---- 臨時異動登記（管理者）----
+    let adminPinValue = ""; // 只留在此分頁記憶體中，登記異動時給後端驗證
+
+    function shortLabel(dateStr) {
+        return `${parseInt(dateStr.slice(5, 7))}/${parseInt(dateStr.slice(8))}`;
+    }
+
+    function renderAdjustForm() {
+        const { year, month } = getSelectedYearMonth();
+        const dateSelect = document.getElementById('adjustDate');
+        const staffSelect = document.getElementById('adjustStaff');
+        const keepDate = dateSelect.value;
+        dateSelect.innerHTML = getWorkdays(year, month)
+            .map(day => `<option value="${day.date}">${shortLabel(day.date)}（${day.weekday}）</option>`).join("");
+        const today = toDateString(new Date());
+        const options = [...dateSelect.options].map(option => option.value);
+        dateSelect.value = options.includes(keepDate) ? keepDate : (options.find(date => date >= today) || options[0] || "");
+        if (!staffSelect.options.length) defaultStaff.forEach(name => staffSelect.add(new Option(name, name)));
+        renderAdjustCurrent();
+        renderAdjustList();
+    }
+
+    function renderAdjustCurrent() {
+        const date = document.getElementById('adjustDate').value;
+        const staff = document.getElementById('adjustStaff').value;
+        const row = findRow(monthData.submissions[staff], date);
+        const text = !date ? "本月沒有供餐日。"
+            : row && row.status === "請假" ? `目前：${staff} ${shortLabel(date)} 請假，${row.substitute} 代班${row.adjusted ? "（臨時異動）" : ""}`
+            : `目前：${staff} ${shortLabel(date)} 出勤${monthData.submissions[staff] ? "" : "（本月尚未提交，以出勤計）"}`;
+        document.getElementById('adjustCurrent').innerText = text;
+        document.getElementById('adjustStatus').value = row && row.status === "請假" ? "出勤" : "請假";
+        toggleAdjustSubstitute();
+    }
+
+    function toggleAdjustSubstitute() {
+        const isLeave = document.getElementById('adjustStatus').value === "請假";
+        document.getElementById('adjustSubLabel').style.display = isLeave ? "flex" : "none";
+        document.getElementById('adjustOther').style.display =
+            isLeave && document.getElementById('adjustSubstitute').value === "其他" ? "inline-block" : "none";
+    }
+
+    function renderAdjustList() {
+        const items = (monthData.adjustments || []).map(item =>
+            `${shortLabel(item.date)} ${item.staff}${item.change}${item.substitute ? `（${item.substitute}代）` : ""}`);
+        document.getElementById('adjustList').innerText = items.length ? `本月臨時異動紀錄：${items.join("、")}` : "本月尚無臨時異動。";
+    }
+
+    function submitAdjust() {
+        const { year, month } = getSelectedYearMonth();
+        const date = document.getElementById('adjustDate').value;
+        const staff = document.getElementById('adjustStaff').value;
+        const status = document.getElementById('adjustStatus').value;
+        const choice = document.getElementById('adjustSubstitute').value;
+        const substitute = status === "請假" ? (choice === "其他" ? document.getElementById('adjustOther').value.trim() : choice) : "";
+
+        if (!date) return;
+        if (status === "請假" && !substitute) { alert("請填寫代班人員姓名。"); return; }
+        if (substitute === staff) { alert("代班人員不能是請假的本人。"); return; }
+        if (!adminPinValue) {
+            // 重新整理後記憶體中的 PIN 會消失，請再驗證一次
+            try { sessionStorage.removeItem(ADMIN_SESSION_KEY); } catch (error) {}
+            document.getElementById('adminPanel').classList.remove('active');
+            document.getElementById('adminLogin').classList.add('active');
+            document.getElementById('adminPin').focus();
+            alert("請再輸入一次管理者 PIN，之後再按「登記異動」。");
+            return;
+        }
+
+        const conflicts = status === "請假" ? findSubstituteConflicts(staff, [{ date, status, substitute }]) : [];
+        if (conflicts.length && !confirm(`請注意：\n\n${conflicts.join("\n")}\n\n確定仍要登記？`)) return;
+        const change = status === "請假" ? `${staff} 臨時請假，由 ${substitute} 代班` : `${staff} 取消請假，改回出勤`;
+        if (!confirm(`確定登記 ${year - 1911}年${month}月${parseInt(date.slice(8))}日：${change}？`)) return;
+
+        const btn = document.getElementById('adjustBtn');
+        btn.disabled = true;
+        btn.innerText = "登記中...";
+        fetch(API_URL, {
+            method: 'POST',
+            body: JSON.stringify({ action: "adjust", pin: adminPinValue, year, month, staff, date, status, substitute, days: getWorkdays(year, month) }),
+            headers: { 'Content-Type': 'text/plain;charset=utf-8' }
+        })
+        .then(response => response.json())
+        .then(result => {
+            if (result.status !== 'success') throw new Error(result.message);
+            applyMonthData(result.data, year, month);
+            setSync(`已同步雲端資料（${formatDateTime(new Date().toISOString())}）`);
+            alert(`已登記：${shortLabel(date)} ${change}。` + (status === "請假" ? "\n\n請記得產生臨時代班勞保通知單交給總務處。" : ""));
+        })
+        .catch(error => {
+            if (String(error.message).includes("PIN")) adminPinValue = "";
+            alert("登記失敗：" + (error.message || error));
+        })
+        .finally(() => {
+            btn.disabled = false;
+            btn.innerText = "登記異動";
+        });
+    }
+
     function isAdminUnlocked() {
         try { return sessionStorage.getItem(ADMIN_SESSION_KEY) === "1"; } catch (error) { return false; }
     }
@@ -891,6 +1020,7 @@
         .then(result => {
             if (result.status !== 'success') throw new Error(result.message);
             try { sessionStorage.setItem(ADMIN_SESSION_KEY, "1"); } catch (error) {}
+            adminPinValue = pin;
             document.getElementById('adminLogin').classList.remove('active');
             document.getElementById('adminPanel').classList.add('active');
         })

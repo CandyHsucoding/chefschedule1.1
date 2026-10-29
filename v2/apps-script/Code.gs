@@ -18,8 +18,11 @@
 const SPREADSHEET_ID = "1S0Koh97wDHxmaxSaOpZh921aJcc730qgtsac_b_83Eg";
 const RECORD_SHEET = "v2提交紀錄";
 const HOLIDAY_SHEET = "假日設定";
+const ADJUST_SHEET = "臨時異動紀錄";
 const STAFF = ["溫美萍", "郭恒妘"];
-const RECORD_HEADER = ["提交時間", "年", "月", "填表人", "日期", "狀態", "代班人員"];
+const RECORD_HEADER = ["提交時間", "年", "月", "填表人", "日期", "狀態", "代班人員", "備註"];
+const ADJUST_HEADER = ["登記時間", "年", "月", "日期", "人員", "異動", "代班人員"];
+const ADJUSTED_MARK = "臨時異動";
 const NOTIFY_EMAIL = ""; // 留空則寄給部署者本人
 const COLOR = {
   white: "#ffffff",
@@ -59,6 +62,9 @@ function doPost(e) {
   const lock = LockService.getScriptLock();
   lock.waitLock(20000);
   try {
+    if (payload.action === "adjust") return json_(adjust_(payload));
+
+
     const year = Number(payload.year);
     const month = Number(payload.month);
     const staff = String(payload.submittedBy || "");
@@ -95,6 +101,70 @@ function verifyAdmin_(pin) {
   }
   cache.put("adminPinFails", String(fails + 1), 600);
   return { status: "error", message: "PIN 碼錯誤。" };
+}
+
+// 管理者登記臨時請假／取消請假：不受提交期限限制，只改當天那一筆，並留下異動紀錄
+function adjust_(payload) {
+  const auth = verifyAdmin_(payload.pin);
+  if (auth.status !== "success") return auth;
+
+  const year = Number(payload.year);
+  const month = Number(payload.month);
+  const staff = String(payload.staff || "");
+  const date = String(payload.date || "");
+  const status = payload.status === "請假" ? "請假" : "出勤";
+  const substitute = status === "請假" ? String(payload.substitute || "").trim() : "";
+  const monthPrefix = year + "-" + ("0" + month).slice(-2) + "-";
+  if (!year || !month || STAFF.indexOf(staff) === -1 || date.indexOf(monthPrefix) !== 0 || !Array.isArray(payload.days)) {
+    return { status: "error", message: "資料格式不正確" };
+  }
+  if (status === "請假" && (!substitute || substitute === staff)) return { status: "error", message: "請填寫代班人員。" };
+
+  const before = getMonth_(year, month).submissions[staff];
+  // 此人本月尚未提交時，以全月出勤為底再修改當天
+  const rows = before
+    ? before.rows.map(row => ({ date: row.date, status: row.status, substitute: row.substitute, adjusted: row.adjusted }))
+    : payload.days.map(day => ({ date: String(day.date), status: "出勤", substitute: "" }));
+  let row = rows.filter(item => item.date === date)[0];
+  if (!row) {
+    row = { date: date };
+    rows.push(row);
+    rows.sort((a, b) => a.date < b.date ? -1 : 1);
+  }
+  row.status = status;
+  row.substitute = substitute;
+  row.adjusted = true;
+
+  const submittedAt = before && before.source === "v2" && before.submittedAt ? new Date(before.submittedAt) : new Date();
+  saveSubmission_(year, month, staff, rows, submittedAt);
+  adjustSheet_().appendRow([new Date(), year, month, date, staff, status === "請假" ? "臨時請假" : "取消請假", substitute]);
+
+  const label = Number(date.slice(5, 7)) + "/" + Number(date.slice(8, 10));
+  const change = status === "請假" ? staff + "請假，" + substitute + "代班" : staff + "取消請假";
+  const monthData = getMonth_(year, month);
+  writeMonthSheet_(year, month, payload.days, monthData.submissions, "臨時異動：" + label + " " + change);
+  notifyAdjust_(year, month, label + " " + change);
+  return { status: "success", data: monthData };
+}
+
+function adjustSheet_() {
+  const ss = ss_();
+  let sheet = ss.getSheetByName(ADJUST_SHEET);
+  if (!sheet) {
+    sheet = ss.insertSheet(ADJUST_SHEET);
+    sheet.appendRow(ADJUST_HEADER);
+    sheet.setFrozenRows(1);
+    sheet.getRange("D:D").setNumberFormat("@");
+  }
+  return sheet;
+}
+
+function getAdjustments_(year, month) {
+  const sheet = ss_().getSheetByName(ADJUST_SHEET);
+  if (!sheet || sheet.getLastRow() < 2) return [];
+  return sheet.getDataRange().getValues().slice(1)
+    .filter(r => Number(r[1]) === year && Number(r[2]) === month)
+    .map(r => ({ loggedAt: new Date(r[0]).toISOString(), date: toText_(r[3]), staff: r[4], change: r[5], substitute: r[6] || "" }));
 }
 
 function json_(obj) {
@@ -134,10 +204,12 @@ function saveSubmission_(year, month, staff, rows, submittedAt) {
       sheet.deleteRow(i + 1);
     }
   }
+  if (sheet.getRange(1, RECORD_HEADER.length).getValue() === "") sheet.getRange(1, RECORD_HEADER.length).setValue(RECORD_HEADER[RECORD_HEADER.length - 1]);
   const newRows = rows.map(row => [
     submittedAt, year, month, staff, String(row.date),
     row.status === "請假" ? "請假" : "出勤",
-    row.status === "請假" ? String(row.substitute || "").trim() : ""
+    row.status === "請假" ? String(row.substitute || "").trim() : "",
+    row.adjusted ? ADJUSTED_MARK : ""
   ]);
   if (newRows.length) {
     const start = sheet.getLastRow() + 1;
@@ -156,7 +228,7 @@ function getMonth_(year, month) {
     if (!submissions[staff]) {
       submissions[staff] = { staff: staff, submitted: true, source: "v2", submittedAt: new Date(r[0]).toISOString(), rows: [] };
     }
-    submissions[staff].rows.push({ date: toText_(r[4]), status: r[5], substitute: r[6] || "" });
+    submissions[staff].rows.push({ date: toText_(r[4]), status: r[5], substitute: r[6] || "", adjusted: r[7] === ADJUSTED_MARK });
   }
 
   // 相容舊版：此月份沒有 v2 紀錄的人，改從既有月排班表反推
@@ -167,7 +239,8 @@ function getMonth_(year, month) {
   }
 
   const calendar = getCalendar_();
-  return { year: year, month: month, submissions: submissions, holidays: calendar.holidays, workdays: calendar.workdays };
+  return { year: year, month: month, submissions: submissions, holidays: calendar.holidays, workdays: calendar.workdays,
+    adjustments: getAdjustments_(year, month) };
 }
 
 function readLegacyMonthSheet_(year, month) {
@@ -212,8 +285,8 @@ function writeMonthSheet_(year, month, days, submissions, updateNote) {
       const sub = submissions[staff];
       const row = sub && sub.rows.filter(r => r.date === day.date)[0];
       if (row && row.status === "請假") {
-        notes.push(staff + "請假：" + row.substitute);
-        leaveItems[s].push(shortDate_(day.label) + " " + row.substitute + "代");
+        notes.push(staff + (row.adjusted ? "臨時請假：" : "請假：") + row.substitute);
+        leaveItems[s].push(shortDate_(day.label) + " " + row.substitute + "代" + (row.adjusted ? "（臨時）" : ""));
         rowBg[3 + s] = COLOR.leaveCell;
         rowWeight[3 + s] = "bold";
         return row.substitute;
@@ -325,6 +398,17 @@ function notify_(year, month, staff, rows) {
       (lines.length ? lines.join("\n") : "本月無請假。") +
       "\n\n合併後班表：" + ss_().getUrl();
     MailApp.sendEmail(to, subject, body);
+  } catch (error) {
+    // 寄信失敗不影響資料寫入
+  }
+}
+
+function notifyAdjust_(year, month, change) {
+  try {
+    const to = NOTIFY_EMAIL || Session.getEffectiveUser().getEmail();
+    if (!to) return;
+    MailApp.sendEmail(to, "【班表臨時異動】" + (year - 1911) + "年" + month + "月 " + change,
+      "管理者已登記臨時異動：" + change + "\n\n如有代班，請記得產生臨時代班勞保通知單交總務處。\n\n合併後班表：" + ss_().getUrl());
   } catch (error) {
     // 寄信失敗不影響資料寫入
   }
