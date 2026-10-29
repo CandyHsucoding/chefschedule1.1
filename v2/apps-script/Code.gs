@@ -41,7 +41,7 @@ function doGet(e) {
     if (params.action === "month") {
       return json_({ status: "success", data: getMonth_(Number(params.year), Number(params.month)) });
     }
-    return json_({ status: "success", data: { holidays: getHolidays_() } });
+    return json_({ status: "success", data: getCalendar_() });
   } catch (error) {
     return json_({ status: "error", message: String(error) });
   }
@@ -142,7 +142,8 @@ function getMonth_(year, month) {
     missing.forEach(name => { if (legacy[name]) submissions[name] = legacy[name]; });
   }
 
-  return { year: year, month: month, submissions: submissions, holidays: getHolidays_() };
+  const calendar = getCalendar_();
+  return { year: year, month: month, submissions: submissions, holidays: calendar.holidays, workdays: calendar.workdays };
 }
 
 function readLegacyMonthSheet_(year, month) {
@@ -280,12 +281,13 @@ function reformatAllMonths() {
   });
 }
 
-function getHolidays_() {
+// 「假日設定」工作表：A 欄＝不供餐日期，B 欄＝週末要供餐的補班日
+function getCalendar_() {
   const sheet = ss_().getSheetByName(HOLIDAY_SHEET);
-  if (!sheet || sheet.getLastRow() < 1) return [];
-  return sheet.getRange(1, 1, sheet.getLastRow(), 1).getValues()
-    .map(r => toText_(r[0]).trim())
-    .filter(v => /^\d{4}-\d{2}-\d{2}$/.test(v));
+  if (!sheet || sheet.getLastRow() < 1) return { holidays: [], workdays: [] };
+  const values = sheet.getRange(1, 1, sheet.getLastRow(), 2).getValues();
+  const pick = col => values.map(r => toText_(r[col]).trim()).filter(v => /^\d{4}-\d{2}-\d{2}$/.test(v));
+  return { holidays: pick(0), workdays: pick(1) };
 }
 
 function notify_(year, month, staff, rows) {

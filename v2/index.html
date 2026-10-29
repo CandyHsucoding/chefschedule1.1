@@ -324,7 +324,7 @@
         </div>
 
         <div class="holiday-note">
-            註：系統已排除例假日、國定假日。8月份僅需填寫開學日 (8/31) 之班表。
+            註：系統已排除例假日、國定假日，並加入學校活動的補班供餐日。8月份僅需填寫開學日 (8/31) 之班表。
         </div>
 
         <form id="scheduleForm">
@@ -364,7 +364,7 @@
             <div id="colorSettings" class="color-grid"></div>
 
             <h3 style="margin-top:22px;">國定假日</h3>
-            <p class="hint">系統內建 2026 年假日。要新增其他假日，請在試算表新增「假日設定」工作表，於 A 欄逐列填入日期（格式 2027-01-01），重新整理即可套用到所有人。</p>
+            <p class="hint">系統內建 2026 年假日。要調整其他日期，請在試算表新增「假日設定」工作表：A 欄填不供餐的日期、B 欄填週末要供餐的補班日（格式 2027-01-01，一列一個），重新整理即可套用到所有人。</p>
             <p class="hint" id="holidayList"></p>
         </section>
     </div>
@@ -386,9 +386,15 @@
     const builtInHolidays = [
         "2026-01-01", "2026-02-16", "2026-02-17", "2026-02-18", "2026-02-19", "2026-02-20", "2026-02-27",
         "2026-04-03", "2026-04-06", "2026-05-01", "2026-06-19",
-        "2026-09-25", "2026-09-28", "2026-10-09", "2026-10-26", "2026-12-25"
+        "2026-09-25", "2026-09-28", "2026-10-09", "2026-10-26", "2026-12-25",
+        "2026-12-21" // 五福國小校慶補假，不供餐
+    ];
+    // 週末但需要供餐的日期
+    const builtInWorkdays = [
+        "2026-12-19" // 五福國小校慶（週六）供餐
     ];
     let extraHolidays = [];
+    let extraWorkdays = [];
     let monthData = { submissions: {} };
     let loadedKey = "";
     let fetchSeq = 0;
@@ -447,9 +453,23 @@
         document.getElementById('syncBar').classList.toggle('error', isError);
     }
 
+    function toDateString(date) {
+        return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+    }
+
     function isNationalHoliday(date) {
-        const dateString = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+        const dateString = toDateString(date);
         return builtInHolidays.includes(dateString) || extraHolidays.includes(dateString);
+    }
+
+    function isExtraWorkday(date) {
+        const dateString = toDateString(date);
+        return builtInWorkdays.includes(dateString) || extraWorkdays.includes(dateString);
+    }
+
+    function isWorkday(date) {
+        if (isExtraWorkday(date)) return true;
+        return date.getDay() !== 0 && date.getDay() !== 6 && !isNationalHoliday(date);
     }
 
     function getWorkdays(year, month) {
@@ -461,7 +481,7 @@
             if (month === 8 && day <= 30) continue;
 
             const currentDate = new Date(year, month - 1, day);
-            if (currentDate.getDay() !== 0 && currentDate.getDay() !== 6 && !isNationalHoliday(currentDate)) {
+            if (isWorkday(currentDate)) {
                 days.push({
                     date: `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`,
                     label: `${month}月${day}日`,
@@ -499,7 +519,7 @@
         form.style.display = "block";
 
         const prevMonthDate = new Date(year, month - 1, 0);
-        while (prevMonthDate.getDay() === 0 || prevMonthDate.getDay() === 6 || isNationalHoliday(prevMonthDate)) {
+        while (!isWorkday(prevMonthDate)) {
             prevMonthDate.setDate(prevMonthDate.getDate() - 1);
         }
 
@@ -545,8 +565,10 @@
 
     function applyMonthData(data, year, month) {
         const holidays = Array.isArray(data.holidays) ? data.holidays : [];
-        const holidaysChanged = holidays.join() !== extraHolidays.join();
+        const workdays = Array.isArray(data.workdays) ? data.workdays : [];
+        const holidaysChanged = holidays.join() !== extraHolidays.join() || workdays.join() !== extraWorkdays.join();
         extraHolidays = holidays;
+        extraWorkdays = workdays;
         monthData = { submissions: data.submissions || {} };
         loadedKey = monthKey(year, month);
         if (holidaysChanged) {
@@ -764,9 +786,11 @@
     }
 
     function renderHolidayList() {
-        document.getElementById('holidayList').innerText = extraHolidays.length
-            ? `試算表額外假日：${extraHolidays.join("、")}`
-            : "試算表目前沒有額外假日設定。";
+        document.getElementById('holidayList').innerText = [
+            `內建補班供餐日：${builtInWorkdays.join("、")}`,
+            `試算表額外假日：${extraHolidays.length ? extraHolidays.join("、") : "無"}`,
+            `試算表補班供餐日：${extraWorkdays.length ? extraWorkdays.join("、") : "無"}`
+        ].join("\n");
     }
 
     function toggleAdminPanel() {
