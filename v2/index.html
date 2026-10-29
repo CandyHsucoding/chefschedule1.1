@@ -744,6 +744,25 @@
         document.getElementById('formState').innerText = text;
     }
 
+    // 比對另一位人員已送出的班表：同一天代班人重複，或代班人本身當天請假
+    function findSubstituteConflicts(staff, personalRows) {
+        const conflicts = [];
+        defaultStaff.filter(other => other !== staff).forEach(other => {
+            const otherSubmission = monthData.submissions[other];
+            personalRows.filter(row => row.status === "請假").forEach(row => {
+                const otherRow = findRow(otherSubmission, row.date);
+                const label = `${parseInt(row.date.slice(5, 7))}/${parseInt(row.date.slice(8))}`;
+                if (otherRow && otherRow.status === "請假" && otherRow.substitute.trim() === row.substitute) {
+                    conflicts.push(`・${label}：${row.substitute} 同一天也在幫 ${other} 代班`);
+                }
+                if (row.substitute === other && otherRow && otherRow.status === "請假") {
+                    conflicts.push(`・${label}：代班人 ${other} 當天也請假`);
+                }
+            });
+        });
+        return conflicts;
+    }
+
     function submitData() {
         const { year, month } = getSelectedYearMonth();
         const staff = getCurrentStaff();
@@ -757,6 +776,9 @@
             alert("尚未設定雲端網址，無法送出。");
             return;
         }
+
+        const conflicts = findSubstituteConflicts(staff, personalRows);
+        if (conflicts.length && !confirm(`請注意，以下日期的安排可能衝突：\n\n${conflicts.join("\n")}\n\n若確定沒問題請按「確定」繼續；要修改請按「取消」。`)) return;
 
         const leaveCount = personalRows.filter(row => row.status === "請假").length;
         if (!confirm(`確定以「${staff}」身分送出 ${year}年${month}月班表？\n請假 ${leaveCount} 天。`)) return;
