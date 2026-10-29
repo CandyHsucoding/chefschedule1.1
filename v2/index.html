@@ -1,0 +1,877 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>廚房計時人員排班 v2</title>
+    <style>
+        :root {
+            --ink: #263238;
+            --muted: #607d8b;
+            --line: #d8e0e5;
+            --soft: #f4f8fb;
+            --accent: #2e7d5b;
+            --accent-dark: #24684a;
+            --warn: #c62828;
+            --info-bg: #eef7fb;
+            --info-line: #b7d9e8;
+        }
+
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            padding: 20px;
+            color: var(--ink);
+            background: #f6f7f3;
+            font-family: "Microsoft JhengHei", "Noto Sans TC", sans-serif;
+        }
+        .container {
+            max-width: 1080px;
+            margin: 0 auto;
+            background: #fff;
+            padding: 24px;
+            border-radius: 8px;
+            box-shadow: 0 2px 12px rgba(38, 50, 56, 0.12);
+        }
+        h2 { margin: 0 0 18px; text-align: center; color: #263238; }
+        h3 { margin: 0 0 12px; font-size: 20px; }
+        .section {
+            margin-top: 18px;
+            padding: 16px;
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            background: #fff;
+        }
+        .controls {
+            display: flex;
+            justify-content: center;
+            gap: 12px;
+            margin-bottom: 16px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+        label { font-weight: 700; }
+        select, button, input[type="text"], textarea {
+            padding: 8px 10px;
+            font-size: 16px;
+            border: 1px solid #b8c5cc;
+            border-radius: 4px;
+            font-family: inherit;
+        }
+        textarea {
+            width: 100%;
+            min-height: 92px;
+            resize: vertical;
+            line-height: 1.5;
+        }
+        button {
+            background-color: var(--accent);
+            color: white;
+            border: none;
+            cursor: pointer;
+            font-weight: 700;
+        }
+        button:hover { background-color: var(--accent-dark); }
+        button:disabled { background-color: #99a4aa; cursor: not-allowed; }
+        button.secondary { background: #546e7a; }
+        button.secondary:hover { background: #455a64; }
+        button.warning { background: #b44a35; }
+        button.warning:hover { background: #963a29; }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        th, td { border: 1px solid #c8d2d8; padding: 9px; text-align: center; }
+        th { background-color: #edf3f6; }
+        td.left { text-align: left; }
+        .holiday-note {
+            color: #a43f32;
+            font-size: 0.95em;
+            margin-bottom: 14px;
+            text-align: center;
+            font-weight: bold;
+        }
+        .deadline-warning {
+            color: white;
+            background-color: #d9534f;
+            padding: 10px;
+            border-radius: 5px;
+            text-align: center;
+            margin-bottom: 14px;
+            display: none;
+        }
+        .summer-vacation-msg {
+            color: #2a6496;
+            background-color: #d9edf7;
+            padding: 20px;
+            border-radius: 5px;
+            text-align: center;
+            font-size: 1.2em;
+            font-weight: bold;
+            margin: 20px 0;
+            border: 1px solid #bce8f1;
+            display: none;
+        }
+        .save-status {
+            color: #31708f;
+            background-color: var(--info-bg);
+            border: 1px solid var(--info-line);
+            border-radius: 5px;
+            padding: 9px 12px;
+            margin-bottom: 12px;
+            text-align: center;
+            display: none;
+        }
+        .hint {
+            color: var(--muted);
+            line-height: 1.6;
+            margin: 0 0 10px;
+        }
+        .status-pill {
+            display: inline-block;
+            min-width: 72px;
+            padding: 4px 8px;
+            border-radius: 999px;
+            color: #fff;
+            font-weight: 700;
+            background: #78909c;
+        }
+        .status-pill.done { background: #2e7d5b; }
+        .status-pill.pending { background: #b26a00; }
+        .status-pill.leave { background: #b44a35; }
+        .merge-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 12px;
+        }
+        .person-card {
+            border: 1px solid var(--line);
+            background: var(--soft);
+            border-radius: 8px;
+            padding: 12px;
+        }
+        .person-card strong { display: block; margin-bottom: 8px; }
+        .button-row {
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-top: 14px;
+        }
+        .content-box {
+            background: #f8fafb;
+            border: 1px dashed #aab8c0;
+            padding: 12px;
+            border-radius: 8px;
+        }
+        .admin-toggle {
+            display: flex;
+            justify-content: flex-end;
+            margin-top: 18px;
+        }
+        .admin-panel {
+            display: none;
+            border-color: #b7c8d0;
+            background: #fbfdfd;
+        }
+        .admin-panel.active { display: block; }
+        .color-grid {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 12px;
+        }
+        .color-card {
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            padding: 12px;
+            background: var(--soft);
+        }
+        .color-card input[type="color"] {
+            width: 100%;
+            height: 40px;
+            padding: 2px;
+            border: 1px solid #b8c5cc;
+            border-radius: 4px;
+            background: #fff;
+        }
+        .name-chip {
+            display: inline-block;
+            min-width: 72px;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-weight: 700;
+        }
+        input:disabled, select:disabled {
+            background-color: #eef0f1;
+            cursor: not-allowed;
+            border: 1px dashed #b8c5cc;
+            color: #64737b;
+        }
+        select.leave-status { color: var(--warn); font-weight: bold; }
+        .version-tag {
+            display: inline-block;
+            margin-left: 6px;
+            padding: 2px 8px;
+            border-radius: 999px;
+            background: var(--accent);
+            color: #fff;
+            font-size: 14px;
+            vertical-align: middle;
+        }
+        .sync-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+            padding: 9px 12px;
+            margin-bottom: 12px;
+            border-radius: 5px;
+            background: var(--info-bg);
+            border: 1px solid var(--info-line);
+            color: #31708f;
+        }
+        .sync-bar.error { background: #fdecea; border-color: #f2b8b5; color: var(--warn); }
+        .sync-bar button { padding: 5px 12px; font-size: 14px; }
+        .form-state { text-align: center; color: var(--muted); margin: 6px 0 0; }
+        a.sheet-link { color: var(--accent-dark); font-weight: 700; }
+        #printArea { display: none; }
+
+        @media (max-width: 760px) {
+            body { padding: 10px; }
+            .container { padding: 14px; }
+            .merge-grid { grid-template-columns: 1fr; }
+            .color-grid { grid-template-columns: 1fr; }
+            th, td { padding: 7px 5px; font-size: 14px; }
+            select, button, input[type="text"], textarea { font-size: 15px; }
+        }
+
+        @page {
+            size: A4 portrait;
+            margin: 7mm;
+        }
+
+        @media print {
+            * {
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+            }
+            body { background: #fff; padding: 0; margin: 0; }
+            .container { box-shadow: none; max-width: none; padding: 0; }
+            .no-print { display: none !important; }
+            #printArea { display: block !important; }
+            .print-sheet {
+                break-after: page;
+                page-break-after: always;
+                break-inside: avoid;
+                page-break-inside: avoid;
+                min-height: 0;
+                padding: 0;
+            }
+            .print-sheet:last-child {
+                break-after: auto;
+                page-break-after: auto;
+            }
+            .print-title {
+                text-align: center;
+                font-size: 20px;
+                font-weight: 700;
+                margin: 0 0 3px;
+            }
+            .print-month {
+                text-align: center;
+                font-size: 16px;
+                margin: 0 0 8px;
+            }
+            .print-sheet table {
+                table-layout: fixed;
+                font-size: 13.5px;
+                line-height: 1.25;
+                margin-top: 0;
+            }
+            .print-sheet th, .print-sheet td {
+                border: 1px solid #000;
+                padding: 4px 5px;
+                height: 28px;
+            }
+            .print-sheet th {
+                font-weight: 700;
+            }
+            .print-sheet .name-chip {
+                min-width: 64px;
+                padding: 3px 6px;
+            }
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div class="no-print">
+        <h2>廚房計時人員出勤預排班表 (五甲國中) <span class="version-tag">v2</span></h2>
+
+        <div id="syncBar" class="sync-bar">
+            <span id="syncText">正在讀取雲端資料...</span>
+            <button type="button" class="secondary" onclick="fetchMonth()">重新整理</button>
+        </div>
+        <div id="deadlineMsg" class="deadline-warning"></div>
+        <div id="summerMsg" class="summer-vacation-msg"></div>
+        <div id="saveStatus" class="save-status"></div>
+
+        <div class="controls">
+            <label for="yearSelect">填寫月份</label>
+            <select id="yearSelect" onchange="onMonthChange()"></select> 年
+            <select id="monthSelect" onchange="onMonthChange()"></select> 月
+            <label for="staffSelect">填表人</label>
+            <select id="staffSelect" onchange="fillForm()"></select>
+        </div>
+
+        <div class="holiday-note">
+            註：系統已排除例假日、國定假日。8月份僅需填寫開學日 (8/31) 之班表。
+        </div>
+
+        <form id="scheduleForm">
+            <table id="scheduleTable">
+                <thead>
+                    <tr>
+                        <th>序號</th>
+                        <th>日期</th>
+                        <th>星期</th>
+                        <th>我的出勤狀態</th>
+                        <th>代班人員 (請假才填寫)</th>
+                    </tr>
+                </thead>
+                <tbody id="tableBody"></tbody>
+            </table>
+            <p id="formState" class="form-state"></p>
+            <div class="button-row">
+                <button type="button" id="submitBtn" onclick="submitData()" style="padding: 12px 34px; font-size: 18px; border-radius: 30px;">確認並送出我的班表</button>
+            </div>
+        </form>
+
+        <div class="admin-toggle">
+            <button type="button" class="secondary" onclick="toggleAdminPanel()">管理者功能</button>
+        </div>
+
+        <section id="adminPanel" class="section admin-panel">
+            <h3>兩人提交狀態（雲端同步）</h3>
+            <p class="hint">資料直接讀取 Google 試算表，任何裝置打開都會看到相同結果。<a class="sheet-link" href="https://docs.google.com/spreadsheets/d/1S0Koh97wDHxmaxSaOpZh921aJcc730qgtsac_b_83Eg/edit" target="_blank" rel="noopener">開啟試算表</a></p>
+            <div id="mergeStatus" class="merge-grid"></div>
+            <div class="button-row">
+                <button type="button" class="secondary" onclick="renderPrintableSheets()">產出兩人出勤簽到表</button>
+                <button type="button" class="secondary" onclick="printSheets()">列印 / 另存 PDF</button>
+            </div>
+
+            <h3 style="margin-top:22px;">簽到表顏色管理</h3>
+            <p class="hint">顏色會套用在簽到表「排班」欄，方便區分原排班人員與代班人員。</p>
+            <div id="colorSettings" class="color-grid"></div>
+
+            <h3 style="margin-top:22px;">國定假日</h3>
+            <p class="hint">系統內建 2026 年假日。要新增其他假日，請在試算表新增「假日設定」工作表，於 A 欄逐列填入日期（格式 2027-01-01），重新整理即可套用到所有人。</p>
+            <p class="hint" id="holidayList"></p>
+        </section>
+    </div>
+
+    <div id="printArea"></div>
+</div>
+
+<script>
+    // 部署 v2/apps-script/Code.gs 後，把網頁應用程式網址 (/exec) 貼在這裡
+    const API_URL = "https://script.google.com/macros/s/AKfycbxDSYwI3Ho8E_7siAkiTKZ0NU_qHUL6YqRMZ3Ma_yTvq-uc88HtqiUI1gN9uO0uK1A/exec";
+    const DRAFT_PREFIX = "chefScheduleV2Draft";
+    const COLOR_STORAGE_KEY = "chefScheduleNameColors";
+    const defaultStaff = ["溫美萍", "郭恒妘"];
+    const defaultNameColors = {
+        "溫美萍": "#dff3e8",
+        "郭恒妘": "#e4efff",
+        "代班人員": "#fff1c7"
+    };
+    const builtInHolidays = [
+        "2026-01-01", "2026-02-16", "2026-02-17", "2026-02-18", "2026-02-19", "2026-02-20", "2026-02-27",
+        "2026-04-03", "2026-04-06", "2026-05-01", "2026-06-19",
+        "2026-09-25", "2026-09-28", "2026-10-09", "2026-10-26", "2026-12-25"
+    ];
+    let extraHolidays = [];
+    let monthData = { submissions: {} };
+    let loadedKey = "";
+    let fetchSeq = 0;
+
+    window.onload = function() {
+        const today = new Date();
+        const yearSelect = document.getElementById('yearSelect');
+        const monthSelect = document.getElementById('monthSelect');
+        const staffSelect = document.getElementById('staffSelect');
+
+        for (let i = today.getFullYear() - 1; i <= today.getFullYear() + 1; i++) {
+            yearSelect.add(new Option(i, i));
+        }
+        for (let i = 1; i <= 12; i++) {
+            monthSelect.add(new Option(i, i));
+        }
+        defaultStaff.forEach(name => staffSelect.add(new Option(name, name)));
+
+        const nextMonthDate = new Date(today.getFullYear(), today.getMonth() + 1, 1);
+        yearSelect.value = nextMonthDate.getFullYear();
+        monthSelect.value = nextMonthDate.getMonth() + 1;
+
+        renderColorSettings();
+        onMonthChange();
+    };
+
+    function escapeHtml(value) {
+        return String(value == null ? "" : value).replace(/[&<>"']/g, ch => ({
+            "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+        }[ch]));
+    }
+
+    function getSelectedYearMonth() {
+        return {
+            year: parseInt(document.getElementById('yearSelect').value),
+            month: parseInt(document.getElementById('monthSelect').value)
+        };
+    }
+
+    function getCurrentStaff() {
+        return document.getElementById('staffSelect').value || defaultStaff[0];
+    }
+
+    function monthKey(year, month) {
+        return `${year}-${String(month).padStart(2, '0')}`;
+    }
+
+    function showSaveStatus(message) {
+        const status = document.getElementById('saveStatus');
+        status.innerText = message;
+        status.style.display = "block";
+    }
+
+    function setSync(message, isError = false) {
+        document.getElementById('syncText').innerText = message;
+        document.getElementById('syncBar').classList.toggle('error', isError);
+    }
+
+    function isNationalHoliday(date) {
+        const dateString = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+        return builtInHolidays.includes(dateString) || extraHolidays.includes(dateString);
+    }
+
+    function getWorkdays(year, month) {
+        const lastDay = new Date(year, month, 0).getDate();
+        const weekdays = ['日', '一', '二', '三', '四', '五', '六'];
+        const days = [];
+
+        for (let day = 1; day <= lastDay; day++) {
+            if (month === 8 && day <= 30) continue;
+
+            const currentDate = new Date(year, month - 1, day);
+            if (currentDate.getDay() !== 0 && currentDate.getDay() !== 6 && !isNationalHoliday(currentDate)) {
+                days.push({
+                    date: `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`,
+                    label: `${month}月${day}日`,
+                    weekday: weekdays[currentDate.getDay()]
+                });
+            }
+        }
+
+        return days;
+    }
+
+    function onMonthChange() {
+        monthData = { submissions: {} };
+        loadedKey = "";
+        checkDeadline();
+        generateSchedule();
+        fetchMonth();
+    }
+
+    function checkDeadline() {
+        const { year, month } = getSelectedYearMonth();
+        const msgDiv = document.getElementById('deadlineMsg');
+        const summerDiv = document.getElementById('summerMsg');
+        const submitBtn = document.getElementById('submitBtn');
+        const form = document.getElementById('scheduleForm');
+
+        if (month === 7) {
+            summerDiv.style.display = "block";
+            summerDiv.innerHTML = "7月份為暑假期間，全月不須填寫排班表。";
+            msgDiv.style.display = "none";
+            form.style.display = "none";
+            return;
+        }
+        summerDiv.style.display = "none";
+        form.style.display = "block";
+
+        const prevMonthDate = new Date(year, month - 1, 0);
+        while (prevMonthDate.getDay() === 0 || prevMonthDate.getDay() === 6 || isNationalHoliday(prevMonthDate)) {
+            prevMonthDate.setDate(prevMonthDate.getDate() - 1);
+        }
+
+        const deadline = new Date(prevMonthDate.getFullYear(), prevMonthDate.getMonth(), prevMonthDate.getDate(), 12, 0, 0);
+        const formattedDeadline = `${deadline.getFullYear() - 1911}年${deadline.getMonth() + 1}月${deadline.getDate()}日 中午 12:00`;
+
+        msgDiv.style.display = "block";
+        if (new Date() > deadline) {
+            msgDiv.style.backgroundColor = "#d9534f";
+            msgDiv.innerHTML = `提交期限已過！${month}月班表的截止時間為：${formattedDeadline}。<br>仍可查看已送出的內容，但無法再提交。`;
+            submitBtn.disabled = true;
+        } else {
+            msgDiv.style.backgroundColor = "#5bc0de";
+            msgDiv.innerHTML = `填寫提醒：${month}月班表請於 ${formattedDeadline} 前提交完畢。`;
+            submitBtn.disabled = !API_URL;
+        }
+    }
+
+    function fetchMonth() {
+        const { year, month } = getSelectedYearMonth();
+        if (!API_URL) {
+            setSync("尚未設定雲端網址 (API_URL)，目前只能填寫草稿，無法送出或同步。", true);
+            fillForm();
+            return;
+        }
+
+        const seq = ++fetchSeq;
+        setSync(`正在讀取 ${year}年${month}月 雲端資料...`);
+        fetch(`${API_URL}?action=month&year=${year}&month=${month}`)
+            .then(response => response.json())
+            .then(result => {
+                if (seq !== fetchSeq) return;
+                if (result.status !== 'success') throw new Error(result.message);
+                applyMonthData(result.data, year, month);
+                setSync(`已同步雲端資料（${formatDateTime(new Date().toISOString())}）`);
+            })
+            .catch(error => {
+                if (seq !== fetchSeq) return;
+                setSync(`無法讀取雲端資料：${error.message || error}。請按「重新整理」再試。`, true);
+                fillForm();
+            });
+    }
+
+    function applyMonthData(data, year, month) {
+        const holidays = Array.isArray(data.holidays) ? data.holidays : [];
+        const holidaysChanged = holidays.join() !== extraHolidays.join();
+        extraHolidays = holidays;
+        monthData = { submissions: data.submissions || {} };
+        loadedKey = monthKey(year, month);
+        if (holidaysChanged) {
+            checkDeadline();
+            generateSchedule();
+        } else {
+            fillForm();
+        }
+        renderHolidayList();
+    }
+
+    function generateSchedule() {
+        const { year, month } = getSelectedYearMonth();
+        const tbody = document.getElementById('tableBody');
+        tbody.innerHTML = '';
+        document.getElementById('printArea').innerHTML = '';
+
+        if (month === 7) return;
+
+        getWorkdays(year, month).forEach((day, index) => {
+            const tr = document.createElement('tr');
+            tr.id = `row_${day.date}`;
+            tr.innerHTML = `
+                <td>${index + 1}</td>
+                <td>${day.label}</td>
+                <td>${day.weekday}</td>
+                <td>
+                    <select id="status_${day.date}" onchange="checkLeave('${day.date}'); saveDraft();">
+                        <option value="出勤">出勤</option>
+                        <option value="請假">請假</option>
+                    </select>
+                </td>
+                <td><input type="text" id="sub_${day.date}" placeholder="輸入代班姓名" oninput="saveDraft()" disabled></td>
+            `;
+            tbody.appendChild(tr);
+        });
+
+        fillForm();
+    }
+
+    function checkLeave(dateStr) {
+        const status = document.getElementById(`status_${dateStr}`);
+        const subInput = document.getElementById(`sub_${dateStr}`);
+        if (!status || !subInput) return;
+
+        const isLeave = status.value === "請假";
+        status.classList.toggle("leave-status", isLeave);
+        subInput.disabled = !isLeave;
+        if (!isLeave) subInput.value = "";
+    }
+
+    function collectPersonalData() {
+        const personalRows = [];
+        let hasError = false;
+
+        document.querySelectorAll('#tableBody tr').forEach(row => {
+            const dateStr = row.id.replace('row_', '');
+            const status = document.getElementById(`status_${dateStr}`).value;
+            const substitute = document.getElementById(`sub_${dateStr}`).value.trim();
+            if (status === "請假" && substitute === "") hasError = true;
+            personalRows.push({ date: dateStr, status, substitute });
+        });
+
+        return { personalRows, hasError };
+    }
+
+    function draftKey(staff) {
+        const { year, month } = getSelectedYearMonth();
+        return `${DRAFT_PREFIX}:${monthKey(year, month)}:${staff}`;
+    }
+
+    function readDraft(staff) {
+        try {
+            const raw = localStorage.getItem(draftKey(staff));
+            return raw ? JSON.parse(raw) : null;
+        } catch (error) {
+            return null;
+        }
+    }
+
+    function saveDraft() {
+        const { personalRows } = collectPersonalData();
+        try {
+            localStorage.setItem(draftKey(getCurrentStaff()), JSON.stringify({ rows: personalRows, savedAt: new Date().toISOString() }));
+        } catch (error) {
+            // 無法暫存時仍可直接送出
+        }
+        updateFormState();
+    }
+
+    function clearDraft(staff) {
+        try { localStorage.removeItem(draftKey(staff)); } catch (error) {}
+    }
+
+    // 優先順序：此裝置尚未送出的草稿 > 雲端已送出資料 > 預設全部出勤
+    function fillForm() {
+        const staff = getCurrentStaff();
+        const draft = readDraft(staff);
+        const submission = monthData.submissions[staff];
+        const rows = (draft && draft.rows) || (submission && submission.rows) || [];
+
+        document.querySelectorAll('#tableBody tr').forEach(row => {
+            const dateStr = row.id.replace('row_', '');
+            const status = document.getElementById(`status_${dateStr}`);
+            const subInput = document.getElementById(`sub_${dateStr}`);
+            const item = rows.find(entry => entry.date === dateStr);
+
+            status.value = item && item.status === "請假" ? "請假" : "出勤";
+            checkLeave(dateStr);
+            subInput.value = item && item.substitute ? item.substitute : "";
+        });
+
+        updateFormState();
+        renderMergeStatus();
+    }
+
+    function updateFormState() {
+        const staff = getCurrentStaff();
+        const draft = readDraft(staff);
+        const submission = monthData.submissions[staff];
+        let text = "";
+
+        if (draft) {
+            text = `此裝置有 ${staff} 尚未送出的修改（${formatDateTime(draft.savedAt)}），請記得按下方按鈕送出。`;
+        } else if (submission) {
+            text = submission.source === "legacy"
+                ? `目前顯示 ${staff} 已送出的班表（由舊版系統送出）。`
+                : `目前顯示 ${staff} 已送出的班表（${formatDateTime(submission.submittedAt)}）。`;
+        } else if (loadedKey) {
+            text = `${staff} 本月尚未送出班表。`;
+        }
+        document.getElementById('formState').innerText = text;
+    }
+
+    function submitData() {
+        const { year, month } = getSelectedYearMonth();
+        const staff = getCurrentStaff();
+        const { personalRows, hasError } = collectPersonalData();
+
+        if (hasError) {
+            alert("有請假的日期請填寫代班人員姓名！");
+            return;
+        }
+        if (!API_URL) {
+            alert("尚未設定雲端網址，無法送出。");
+            return;
+        }
+
+        const leaveCount = personalRows.filter(row => row.status === "請假").length;
+        if (!confirm(`確定以「${staff}」身分送出 ${year}年${month}月班表？\n請假 ${leaveCount} 天。`)) return;
+
+        const btn = document.getElementById('submitBtn');
+        btn.innerText = "資料傳送中...";
+        btn.disabled = true;
+
+        fetch(API_URL, {
+            method: 'POST',
+            body: JSON.stringify({
+                year,
+                month,
+                submittedBy: staff,
+                personalData: personalRows,
+                days: getWorkdays(year, month)
+            }),
+            headers: { 'Content-Type': 'text/plain;charset=utf-8' }
+        })
+        .then(response => response.json())
+        .then(result => {
+            if (result.status !== 'success') throw new Error(result.message);
+            clearDraft(staff);
+            applyMonthData(result.data, year, month);
+            setSync(`已同步雲端資料（${formatDateTime(new Date().toISOString())}）`);
+            showSaveStatus(`${staff} 的 ${year}年${month}月班表已成功送出並寫入試算表。`);
+            alert(`${staff} 的 ${year}年${month}月班表已成功傳送。`);
+        })
+        .catch(error => {
+            alert("送出失敗，資料仍保留在此裝置，請稍後重試。(" + (error.message || error) + ")");
+        })
+        .finally(() => {
+            btn.innerText = "確認並送出我的班表";
+            checkDeadline();
+        });
+    }
+
+    function loadNameColors() {
+        try {
+            const raw = localStorage.getItem(COLOR_STORAGE_KEY);
+            return raw ? { ...defaultNameColors, ...JSON.parse(raw) } : { ...defaultNameColors };
+        } catch (error) {
+            return { ...defaultNameColors };
+        }
+    }
+
+    function getNameColor(name) {
+        const colors = loadNameColors();
+        return colors[name] || colors["代班人員"] || "#fff1c7";
+    }
+
+    function renderColorSettings() {
+        const colors = loadNameColors();
+        document.getElementById('colorSettings').innerHTML = [...defaultStaff, "代班人員"].map((key, index) => `
+            <div class="color-card">
+                <label for="color_${index}">${key}</label>
+                <input type="color" id="color_${index}" value="${colors[key]}" onchange="updateNameColor('${key}', this.value)">
+            </div>
+        `).join("");
+    }
+
+    function updateNameColor(name, color) {
+        const colors = loadNameColors();
+        colors[name] = color;
+        try { localStorage.setItem(COLOR_STORAGE_KEY, JSON.stringify(colors)); } catch (error) {}
+        if (document.getElementById('printArea').innerHTML) renderPrintableSheets(false);
+        showSaveStatus("簽到表顏色已更新。");
+    }
+
+    function renderHolidayList() {
+        document.getElementById('holidayList').innerText = extraHolidays.length
+            ? `試算表額外假日：${extraHolidays.join("、")}`
+            : "試算表目前沒有額外假日設定。";
+    }
+
+    function toggleAdminPanel() {
+        document.getElementById('adminPanel').classList.toggle('active');
+    }
+
+    function findRow(submission, dateStr) {
+        if (!submission || !Array.isArray(submission.rows)) return null;
+        return submission.rows.find(item => item.date === dateStr) || null;
+    }
+
+    function renderMergeStatus() {
+        document.getElementById('mergeStatus').innerHTML = defaultStaff.map(staff => {
+            const submission = monthData.submissions[staff];
+            const leaves = submission && Array.isArray(submission.rows)
+                ? submission.rows.filter(row => row.status === "請假")
+                : [];
+            const pill = submission
+                ? `<span class="status-pill done">已提交</span>`
+                : `<span class="status-pill pending">${loadedKey ? '待提交' : '讀取中'}</span>`;
+            const detail = submission
+                ? (submission.source === "legacy" ? "來源：舊版系統（由試算表讀回）" : `提交時間：${formatDateTime(submission.submittedAt)}`)
+                : "";
+            const leaveText = leaves.length
+                ? leaves.map(row => `${parseInt(row.date.slice(5, 7))}/${parseInt(row.date.slice(8))} → ${escapeHtml(row.substitute)}`).join("、")
+                : "無";
+            return `
+                <div class="person-card">
+                    <strong>${staff}</strong>
+                    ${pill}
+                    <p class="hint" style="margin-top:8px;">請假 ${leaves.length} 日：${leaveText}${detail ? `<br>${detail}` : ""}</p>
+                </div>
+            `;
+        }).join("");
+    }
+
+    function formatDateTime(value) {
+        if (!value) return "";
+        const date = new Date(value);
+        if (Number.isNaN(date.getTime())) return value;
+        return `${date.getFullYear()}/${date.getMonth() + 1}/${date.getDate()} ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+    }
+
+    function renderPrintableSheets(showMissingAlert = true) {
+        const { year, month } = getSelectedYearMonth();
+        const missing = defaultStaff.filter(staff => !monthData.submissions[staff]);
+
+        if (missing.length > 0 && showMissingAlert) {
+            if (!confirm(`尚未提交：${missing.join("、")}。\n未提交者將以「全月出勤」產出，確定繼續？`)) return false;
+        }
+
+        const days = getWorkdays(year, month);
+        const rocYear = year - 1911;
+
+        document.getElementById('printArea').innerHTML = defaultStaff.map(staff => {
+
+            const submission = monthData.submissions[staff];
+            const rows = days.map((day, index) => {
+                const item = findRow(submission, day.date);
+                const name = item && item.status === "請假" ? item.substitute : staff;
+                const background = getNameColor(name === staff ? staff : "代班人員");
+                return `
+                    <tr>
+                        <td>${index + 1}</td>
+                        <td>${day.label}</td>
+                        <td>${day.weekday}</td>
+                        <td style="background:${background};"><span class="name-chip">${escapeHtml(name)}</span></td>
+                        <td></td>
+                    </tr>
+                `;
+            }).join("");
+
+            return `
+                <section class="print-sheet">
+                    <div class="print-title">廚房計時人員出勤簽到表(${staff})</div>
+                    <div class="print-month">${rocYear}年${month}月份</div>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th style="width:10%;">序號</th>
+                                <th style="width:22%;">日期</th>
+                                <th style="width:14%;">星期</th>
+                                <th style="width:24%;">排班</th>
+                                <th>簽到欄</th>
+                            </tr>
+                        </thead>
+                        <tbody>${rows}</tbody>
+                    </table>
+                </section>
+            `;
+        }).join("");
+
+        document.getElementById('printArea').style.display = "block";
+        if (showMissingAlert) {
+            showSaveStatus("已產出兩人的出勤簽到表，可按「列印 / 另存 PDF」。");
+            document.getElementById('printArea').scrollIntoView({ behavior: "smooth", block: "start" });
+        }
+        return true;
+    }
+
+    function printSheets() {
+        if (renderPrintableSheets()) {
+            setTimeout(() => window.print(), 100);
+        }
+    }
+</script>
+</body>
+</html>
