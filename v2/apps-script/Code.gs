@@ -21,6 +21,19 @@ const HOLIDAY_SHEET = "假日設定";
 const STAFF = ["溫美萍", "郭恒妘"];
 const RECORD_HEADER = ["提交時間", "年", "月", "填表人", "日期", "狀態", "代班人員"];
 const NOTIFY_EMAIL = ""; // 留空則寄給部署者本人
+const COLOR = {
+  white: "#ffffff",
+  ink: "#263238",
+  muted: "#607d8b",
+  title: "#274e13",
+  header: "#d9ead3",
+  border: "#8a8a8a",
+  leaveRow: "#fde7e4",     // 有人請假的那一列
+  leaveCell: "#ea9999",    // 代班人員所在的排班格
+  leaveText: "#a61c00",
+  summaryLeave: "#fff4e5",
+  summaryNone: "#f3f6f4"
+};
 
 function doGet(e) {
   try {
@@ -49,7 +62,7 @@ function doPost(e) {
     const submittedAt = new Date();
     saveSubmission_(year, month, staff, payload.personalData, submittedAt);
     const monthData = getMonth_(year, month);
-    writeMonthSheet_(year, month, payload.days, monthData.submissions);
+    writeMonthSheet_(year, month, payload.days, monthData.submissions, staff + "送出");
     notify_(year, month, staff, payload.personalData);
 
     return json_({ status: "success", data: monthData });
@@ -153,28 +166,118 @@ function readLegacyMonthSheet_(year, month) {
   return result;
 }
 
-function writeMonthSheet_(year, month, days, submissions) {
+function writeMonthSheet_(year, month, days, submissions, updateNote) {
   const ss = ss_();
   const name = monthSheetName_(year, month);
   const sheet = ss.getSheetByName(name) || ss.insertSheet(name, 1);
-  const output = [["序號", "日期", "星期", "排班 1", "排班 2", "代班人員"]];
+  const cols = 6;
+  const headerRow = 3;
+  const body = [];
+  const backgrounds = [];
+  const fontColors = [];
+  const fontWeights = [];
+  const leaveItems = STAFF.map(() => []);
 
   days.forEach((day, index) => {
     const notes = [];
-    const names = STAFF.map(staff => {
+    const rowBg = [COLOR.white, COLOR.white, COLOR.white, COLOR.white, COLOR.white, COLOR.white];
+    const rowColor = [COLOR.ink, COLOR.ink, COLOR.ink, COLOR.ink, COLOR.ink, COLOR.leaveText];
+    const rowWeight = ["normal", "normal", "normal", "normal", "normal", "bold"];
+    const names = STAFF.map((staff, s) => {
       const sub = submissions[staff];
       const row = sub && sub.rows.filter(r => r.date === day.date)[0];
       if (row && row.status === "請假") {
         notes.push(staff + "請假：" + row.substitute);
+        leaveItems[s].push(shortDate_(day.label) + " " + row.substitute + "代");
+        rowBg[3 + s] = COLOR.leaveCell;
+        rowWeight[3 + s] = "bold";
         return row.substitute;
       }
       return staff;
     });
-    output.push([index + 1, day.label, day.weekday, names[0], names[1], notes.join("；")]);
+    if (notes.length) {
+      [0, 1, 2, 5].forEach(c => { rowBg[c] = COLOR.leaveRow; });
+      rowWeight[1] = "bold";
+    }
+    body.push([index + 1, day.label, day.weekday, names[0], names[1], notes.join("\n")]);
+    backgrounds.push(rowBg);
+    fontColors.push(rowColor);
+    fontWeights.push(rowWeight);
   });
 
-  sheet.clearContents();
-  sheet.getRange(1, 1, output.length, output[0].length).setNumberFormat("@").setValues(output);
+  const summaryLines = STAFF.map((staff, s) => "● " + staff + "　請假 " + leaveItems[s].length + " 天" +
+    (leaveItems[s].length ? "：" + leaveItems[s].join("、") : ""));
+  summaryLines.push("最後更新：" + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "yyyy/MM/dd HH:mm") +
+    (updateNote ? "（" + updateNote + "）" : ""));
+  const totalLeave = leaveItems.reduce((sum, items) => sum + items.length, 0);
+
+  // 重建前先清掉舊內容、格式與合併儲存格
+  sheet.getRange(1, 1, sheet.getMaxRows(), sheet.getMaxColumns()).breakApart();
+  sheet.clear();
+
+  sheet.getRange(1, 1, 1, cols).merge()
+    .setValue((year - 1911) + "年" + month + "月 廚房計時人員排班表")
+    .setFontSize(16).setFontWeight("bold").setFontColor(COLOR.title)
+    .setHorizontalAlignment("center").setVerticalAlignment("middle");
+  sheet.getRange(2, 1, 1, cols).merge()
+    .setValue(summaryLines.join("\n"))
+    .setWrap(true).setFontSize(12).setVerticalAlignment("middle")
+    .setFontColor(totalLeave ? COLOR.leaveText : COLOR.muted)
+    .setBackground(totalLeave ? COLOR.summaryLeave : COLOR.summaryNone);
+  sheet.setRowHeight(1, 36);
+  sheet.setRowHeight(2, 22 * summaryLines.length + 10);
+
+  sheet.getRange(headerRow, 1, 1, cols)
+    .setValues([["序號", "日期", "星期", "排班 1", "排班 2", "代班人員"]])
+    .setBackground(COLOR.header).setFontWeight("bold").setFontSize(13);
+
+  if (body.length) {
+    const range = sheet.getRange(headerRow + 1, 1, body.length, cols);
+    range.setNumberFormat("@").setValues(body)
+      .setBackgrounds(backgrounds).setFontColors(fontColors).setFontWeights(fontWeights)
+      .setFontSize(12).setWrap(true);
+    sheet.setRowHeights(headerRow + 1, body.length, 30);
+  }
+
+  const table = sheet.getRange(headerRow, 1, body.length + 1, cols);
+  table.setHorizontalAlignment("center").setVerticalAlignment("middle")
+    .setBorder(true, true, true, true, true, true, COLOR.border, SpreadsheetApp.BorderStyle.SOLID);
+  sheet.setRowHeight(headerRow, 34);
+  [56, 110, 56, 120, 120, 220].forEach((width, i) => sheet.setColumnWidth(i + 1, width));
+  sheet.setFrozenRows(headerRow);
+}
+
+function shortDate_(label) {
+  const match = String(label).match(/(\d+)月(\d+)日/);
+  return match ? match[1] + "/" + match[2] : label;
+}
+
+// 由已存資料推回工作日清單（供「重新排版既有月份」使用）
+function daysFromSubmissions_(year, submissions) {
+  const weekdays = ["日", "一", "二", "三", "四", "五", "六"];
+  const dates = {};
+  Object.keys(submissions).forEach(staff => submissions[staff].rows.forEach(r => { dates[r.date] = true; }));
+  return Object.keys(dates).sort().map(date => {
+    const m = Number(date.slice(5, 7));
+    const d = Number(date.slice(8, 10));
+    return { date: date, label: m + "月" + d + "日", weekday: weekdays[new Date(year, m - 1, d).getDay()] };
+  });
+}
+
+/**
+ * 在 Apps Script 編輯器上方選擇此函式並按「執行」，
+ * 會把試算表中所有「XXX年X月排班表」套用新排版（內容不變）。
+ */
+function reformatAllMonths() {
+  ss_().getSheets().forEach(sheet => {
+    const match = sheet.getName().match(/^(\d+)年(\d+)月排班表$/);
+    if (!match) return;
+    const year = Number(match[1]) + 1911;
+    const month = Number(match[2]);
+    const data = getMonth_(year, month);
+    const days = daysFromSubmissions_(year, data.submissions);
+    if (days.length) writeMonthSheet_(year, month, days, data.submissions, "重新排版");
+  });
 }
 
 function getHolidays_() {
