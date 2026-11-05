@@ -443,8 +443,9 @@
     ];
     // 學校活動造成的供餐異動：serve 為 true 表示週末需供餐，false 表示平日不供餐；會顯示在該月份備註
     const schoolEvents = [
-        { date: "2026-12-19", serve: false, note: "五福國小校慶，由廠商送披薩，廚工不用出勤" },
-        { date: "2026-12-21", serve: false, note: "校慶補休，廚工不用出勤" }
+        { date: "2026-12-14", serve: false, note: "由本校廚工出勤，臨時人員不用出勤" },
+        { date: "2026-12-19", serve: false, note: "五福國小校慶，由廠商送披薩，臨時人員不用出勤" },
+        { date: "2026-12-21", serve: false, note: "校慶補休，臨時人員不用出勤" }
     ];
     const builtInWorkdays = schoolEvents.filter(event => event.serve).map(event => event.date);
     schoolEvents.filter(event => !event.serve).forEach(event => builtInHolidays.push(event.date));
