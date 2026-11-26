@@ -75,6 +75,7 @@
         button:disabled { background-color: #99a4aa; cursor: not-allowed; }
         button.secondary { background: #546e7a; }
         button.secondary:hover { background: #455a64; }
+        button.month-step { padding: 8px 14px; font-size: 15px; }
         button.warning { background: #b44a35; }
         button.warning:hover { background: #963a29; }
         table { width: 100%; border-collapse: collapse; margin-top: 10px; }
@@ -342,14 +343,16 @@
 
         <div class="controls">
             <label for="yearSelect">填寫月份</label>
+            <button type="button" class="secondary month-step" onclick="shiftMonth(-1)" aria-label="上個月">◀ 上個月</button>
             <select id="yearSelect" onchange="onMonthChange()"></select> 年
             <select id="monthSelect" onchange="onMonthChange()"></select> 月
+            <button type="button" class="secondary month-step" onclick="shiftMonth(1)" aria-label="下個月">下個月 ▶</button>
             <label for="staffSelect">填表人</label>
             <select id="staffSelect" onchange="fillForm()"></select>
         </div>
 
         <div class="holiday-note">
-            註：系統已排除例假日、國定假日，並加入學校活動的補班供餐日。8月份僅需填寫開學日 (8/31) 之班表。
+            註：系統已排除例假日、國定假日，並加入學校活動的補班供餐日。
             <div id="monthEventNote" class="month-event-note"></div>
         </div>
 
@@ -501,6 +504,21 @@
             year: parseInt(document.getElementById('yearSelect').value),
             month: parseInt(document.getElementById('monthSelect').value)
         };
+    }
+
+    // 上個月／下個月：跨年時自動切換年份（年份選單沒有的年份會補上）
+    function shiftMonth(delta) {
+        const { year, month } = getSelectedYearMonth();
+        const target = new Date(year, month - 1 + delta, 1);
+        const yearSelect = document.getElementById('yearSelect');
+        const targetYear = String(target.getFullYear());
+        if (![...yearSelect.options].some(option => option.value === targetYear)) {
+            const option = new Option(targetYear, targetYear);
+            if (delta < 0) yearSelect.add(option, 0); else yearSelect.add(option);
+        }
+        yearSelect.value = targetYear;
+        document.getElementById('monthSelect').value = String(target.getMonth() + 1);
+        onMonthChange();
     }
 
     function getCurrentStaff() {
