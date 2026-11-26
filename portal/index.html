@@ -4,6 +4,12 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>廚房臨時人員管理入口</title>
+    <!-- 安裝為應用程式 (PWA) -->
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#2e7d32">
+    <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+    <link rel="apple-touch-icon" href="apple-touch-icon.png">
+    <meta name="apple-mobile-web-app-title" content="臨時人員管理">
     <style>
         :root {
             --ink: #263238;
@@ -312,6 +318,12 @@
     }
 
     loadTodos();
+</script>
+<script>
+    // 安裝為應用程式 (PWA) 需要的 service worker；註冊失敗也不影響網頁本身
+    if ("serviceWorker" in navigator) {
+        window.addEventListener("load", () => navigator.serviceWorker.register("sw.js", { scope: "./" }).catch(() => {}));
+    }
 </script>
 </body>
 </html>
