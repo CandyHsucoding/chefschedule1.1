@@ -416,7 +416,7 @@
             <div id="colorSettings" class="color-grid"></div>
 
             <h3 style="margin-top:22px;">國定假日</h3>
-            <p class="hint">系統內建 2026 年假日。要調整其他日期，請在試算表新增「假日設定」工作表：A 欄填不供餐的日期、B 欄填週末要供餐的補班日（格式 2027-01-01，一列一個），重新整理即可套用到所有人。</p>
+            <p class="hint">系統內建 2026、2027 年國定假日與寒暑假。要調整其他日期，請在試算表新增「假日設定」工作表：A 欄填不供餐的日期、B 欄填週末要供餐的補班日（格式 2027-01-01，一列一個），重新整理即可套用到所有人。</p>
             <p class="hint" id="holidayList"></p>
         </section>
     </div>
@@ -436,11 +436,24 @@
         "郭恒妘": "#e4efff",
         "代班人員": "#fff1c7"
     };
-    const builtInHolidays = [
-        "2026-01-01", "2026-02-16", "2026-02-17", "2026-02-18", "2026-02-19", "2026-02-20", "2026-02-27",
-        "2026-04-03", "2026-04-06", "2026-05-01", "2026-06-19",
-        "2026-09-25", "2026-09-28", "2026-10-09", "2026-10-26", "2026-12-25"
+    // 國定假日（平日放假的日子），依行政院人事行政總處「政府行政機關辦公日曆表」
+    const nationalHolidays = {
+        "2026-01-01": "元旦", "2026-02-16": "除夕", "2026-02-17": "春節", "2026-02-18": "春節", "2026-02-19": "春節",
+        "2026-02-20": "春節", "2026-02-27": "和平紀念日補假", "2026-04-03": "兒童節補假", "2026-04-06": "清明節補假",
+        "2026-05-01": "勞動節", "2026-06-19": "端午節", "2026-09-25": "中秋節", "2026-09-28": "教師節",
+        "2026-10-09": "國慶日補假", "2026-10-26": "臺灣光復節補假", "2026-12-25": "行憲紀念日",
+        "2027-01-01": "開國紀念日", "2027-02-04": "小年夜", "2027-02-05": "除夕", "2027-02-08": "春節",
+        "2027-02-09": "春節補假", "2027-02-10": "春節補假", "2027-03-01": "和平紀念日補假", "2027-04-05": "清明節",
+        "2027-04-06": "兒童節補假", "2027-04-30": "勞動節補假", "2027-06-09": "端午節", "2027-09-15": "中秋節",
+        "2027-09-28": "教師節", "2027-10-11": "國慶日補假", "2027-10-25": "臺灣光復節", "2027-12-24": "行憲紀念日補假",
+        "2027-12-31": "補假"
+    };
+    // 寒暑假不供餐（含頭尾）。暑假未列出的年份，沿用 7/1～8/30 不排班
+    const schoolBreaks = [
+        { start: "2026-07-01", end: "2026-08-30", name: "暑假" },
+        { start: "2027-01-21", end: "2027-02-10", name: "寒假", resume: "2027-02-11" }
     ];
+    const builtInHolidays = Object.keys(nationalHolidays);
     // 學校活動造成的供餐異動：serve 為 true 表示週末需供餐，false 表示平日不供餐；會顯示在該月份備註
     const schoolEvents = [
         { date: "2026-12-14", serve: false, note: "由本校廚工出勤，臨時人員不用出勤" },
@@ -523,9 +536,21 @@
         return builtInWorkdays.includes(dateString) || extraWorkdays.includes(dateString);
     }
 
+    function getSchoolBreak(date) {
+        const dateString = toDateString(date);
+        const listed = schoolBreaks.find(item => dateString >= item.start && dateString <= item.end);
+        if (listed) return listed;
+        const year = date.getFullYear();
+        const summerListed = schoolBreaks.some(item => item.name === "暑假" && item.start.startsWith(String(year)));
+        if (!summerListed && dateString >= `${year}-07-01` && dateString <= `${year}-08-30`) {
+            return { start: `${year}-07-01`, end: `${year}-08-30`, name: "暑假" };
+        }
+        return null;
+    }
+
     function isWorkday(date) {
         if (isExtraWorkday(date)) return true;
-        return date.getDay() !== 0 && date.getDay() !== 6 && !isNationalHoliday(date);
+        return date.getDay() !== 0 && date.getDay() !== 6 && !isNationalHoliday(date) && !getSchoolBreak(date);
     }
 
     function getWorkdays(year, month) {
@@ -534,8 +559,6 @@
         const days = [];
 
         for (let day = 1; day <= lastDay; day++) {
-            if (month === 8 && day <= 30) continue;
-
             const currentDate = new Date(year, month - 1, day);
             if (isWorkday(currentDate)) {
                 days.push({
@@ -553,15 +576,32 @@
         const { year, month } = getSelectedYearMonth();
         const weekdays = ['日', '一', '二', '三', '四', '五', '六'];
         const prefix = monthKey(year, month);
+        const label = dateString => {
+            const date = new Date(year, month - 1, parseInt(dateString.slice(8)));
+            return `${month}/${date.getDate()}（${weekdays[date.getDay()]}）`;
+        };
         const items = schoolEvents
             .filter(event => event.date.startsWith(prefix))
-            .map(event => {
-                const date = new Date(year, month - 1, parseInt(event.date.slice(8)));
-                return `${month}/${date.getDate()}（${weekdays[date.getDay()]}）${event.note}`;
-            });
+            .map(event => `${label(event.date)}${event.note}`);
+        // 寒暑假的開始與開學（整個月都放假的月份另有提示）
+        schoolBreaks.forEach(item => {
+            if (item.start.startsWith(prefix) && item.start.slice(8) !== "01") {
+                const last = new Date(year, month - 1, parseInt(item.start.slice(8)) - 1);
+                while (!isWorkday(last) && last.getMonth() === month - 1) last.setDate(last.getDate() - 1);
+                const lastText = last.getMonth() === month - 1 ? `${label(toDateString(last))}最後一天供餐，` : "";
+                items.push(`${lastText}${label(item.start)}起放${item.name}`);
+            }
+            if (item.resume && item.resume.startsWith(prefix)) items.push(`${label(item.resume)}開學，開始供餐`);
+        });
+        const holidays = Object.keys(nationalHolidays)
+            .filter(date => date.startsWith(prefix) && !getSchoolBreak(new Date(year, month - 1, parseInt(date.slice(8)))))
+            .map(date => `${label(date)}${nationalHolidays[date]}`);
+        const lines = [];
+        if (items.length) lines.push(`★ ${month}月供餐異動：${items.join("；")}。`);
+        if (holidays.length) lines.push(`本月國定假日不排班：${holidays.join("、")}。`);
         const box = document.getElementById('monthEventNote');
-        box.innerText = items.length ? `★ ${month}月供餐異動：${items.join("；")}。` : "";
-        box.classList.toggle('active', items.length > 0);
+        box.innerText = lines.join("\n");
+        box.classList.toggle('active', lines.length > 0);
     }
 
     function onMonthChange() {
@@ -580,9 +620,11 @@
         const submitBtn = document.getElementById('submitBtn');
         const form = document.getElementById('scheduleForm');
 
-        if (month === 7) {
+        // 整個月都在寒暑假（例如 7 月）就不用填
+        if (!getWorkdays(year, month).length) {
+            const breakItem = getSchoolBreak(new Date(year, month - 1, 15));
             summerDiv.style.display = "block";
-            summerDiv.innerHTML = "7月份為暑假期間，全月不須填寫排班表。";
+            summerDiv.innerHTML = `${month}月份為${breakItem ? breakItem.name : "不供餐"}期間，全月不須填寫排班表。`;
             msgDiv.style.display = "none";
             form.style.display = "none";
             return;
@@ -658,7 +700,6 @@
         tbody.innerHTML = '';
         document.getElementById('printArea').innerHTML = '';
 
-        if (month === 7) return;
 
         getWorkdays(year, month).forEach((day, index) => {
             const tr = document.createElement('tr');
@@ -882,7 +923,8 @@
 
     function renderHolidayList() {
         document.getElementById('holidayList').innerText = [
-            `內建補班供餐日：${builtInWorkdays.join("、")}`,
+            `寒暑假：${schoolBreaks.map(item => `${item.name} ${item.start}～${item.end}`).join("、")}（未列出年份的暑假以 7/1～8/30 計）`,
+            `內建補班供餐日：${builtInWorkdays.length ? builtInWorkdays.join("、") : "無"}`,
             `試算表額外假日：${extraHolidays.length ? extraHolidays.join("、") : "無"}`,
             `試算表補班供餐日：${extraWorkdays.length ? extraWorkdays.join("、") : "無"}`
         ].join("\n");
