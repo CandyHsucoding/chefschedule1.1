@@ -427,6 +427,7 @@
     <div id="printArea"></div>
 </div>
 
+<script src="calendar.js?v=1"></script>
 <script>
     // 部署 v2/apps-script/Code.gs 後，把網頁應用程式網址 (/exec) 貼在這裡
     const API_URL = "https://script.google.com/macros/s/AKfycbxDSYwI3Ho8E_7siAkiTKZ0NU_qHUL6YqRMZ3Ma_yTvq-uc88HtqiUI1gN9uO0uK1A/exec";
@@ -439,32 +440,6 @@
         "郭恒妘": "#e4efff",
         "代班人員": "#fff1c7"
     };
-    // 國定假日（平日放假的日子），依行政院人事行政總處「政府行政機關辦公日曆表」
-    const nationalHolidays = {
-        "2026-01-01": "元旦", "2026-02-16": "除夕", "2026-02-17": "春節", "2026-02-18": "春節", "2026-02-19": "春節",
-        "2026-02-20": "春節", "2026-02-27": "和平紀念日補假", "2026-04-03": "兒童節補假", "2026-04-06": "清明節補假",
-        "2026-05-01": "勞動節", "2026-06-19": "端午節", "2026-09-25": "中秋節", "2026-09-28": "教師節",
-        "2026-10-09": "國慶日補假", "2026-10-26": "臺灣光復節補假", "2026-12-25": "行憲紀念日",
-        "2027-01-01": "開國紀念日", "2027-02-04": "小年夜", "2027-02-05": "除夕", "2027-02-08": "春節",
-        "2027-02-09": "春節補假", "2027-02-10": "春節補假", "2027-03-01": "和平紀念日補假", "2027-04-05": "清明節",
-        "2027-04-06": "兒童節補假", "2027-04-30": "勞動節補假", "2027-06-09": "端午節", "2027-09-15": "中秋節",
-        "2027-09-28": "教師節", "2027-10-11": "國慶日補假", "2027-10-25": "臺灣光復節", "2027-12-24": "行憲紀念日補假",
-        "2027-12-31": "補假"
-    };
-    // 寒暑假不供餐（含頭尾）。暑假未列出的年份，沿用 7/1～8/30 不排班
-    const schoolBreaks = [
-        { start: "2026-07-01", end: "2026-08-30", name: "暑假" },
-        { start: "2027-01-21", end: "2027-02-10", name: "寒假", resume: "2027-02-11" }
-    ];
-    const builtInHolidays = Object.keys(nationalHolidays);
-    // 學校活動造成的供餐異動：serve 為 true 表示週末需供餐，false 表示平日不供餐；會顯示在該月份備註
-    const schoolEvents = [
-        { date: "2026-12-14", serve: false, note: "由本校廚工出勤，臨時人員不用出勤" },
-        { date: "2026-12-19", serve: false, note: "五福國小校慶，由廠商送披薩，臨時人員不用出勤" },
-        { date: "2026-12-21", serve: false, note: "校慶補休，臨時人員不用出勤" }
-    ];
-    const builtInWorkdays = schoolEvents.filter(event => event.serve).map(event => event.date);
-    schoolEvents.filter(event => !event.serve).forEach(event => builtInHolidays.push(event.date));
     let extraHolidays = [];
     let extraWorkdays = [];
     let monthData = { submissions: {} };
@@ -540,35 +515,9 @@
         document.getElementById('syncBar').classList.toggle('error', isError);
     }
 
-    function toDateString(date) {
-        return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-    }
-
-    function isNationalHoliday(date) {
-        const dateString = toDateString(date);
-        return builtInHolidays.includes(dateString) || extraHolidays.includes(dateString);
-    }
-
-    function isExtraWorkday(date) {
-        const dateString = toDateString(date);
-        return builtInWorkdays.includes(dateString) || extraWorkdays.includes(dateString);
-    }
-
-    function getSchoolBreak(date) {
-        const dateString = toDateString(date);
-        const listed = schoolBreaks.find(item => dateString >= item.start && dateString <= item.end);
-        if (listed) return listed;
-        const year = date.getFullYear();
-        const summerListed = schoolBreaks.some(item => item.name === "暑假" && item.start.startsWith(String(year)));
-        if (!summerListed && dateString >= `${year}-07-01` && dateString <= `${year}-08-30`) {
-            return { start: `${year}-07-01`, end: `${year}-08-30`, name: "暑假" };
-        }
-        return null;
-    }
-
+    // 假日、寒暑假與學校活動的規則在 calendar.js
     function isWorkday(date) {
-        if (isExtraWorkday(date)) return true;
-        return date.getDay() !== 0 && date.getDay() !== 6 && !isNationalHoliday(date) && !getSchoolBreak(date);
+        return isServiceDay(date, extraHolidays, extraWorkdays);
     }
 
     function getWorkdays(year, month) {
@@ -650,12 +599,7 @@
         summerDiv.style.display = "none";
         form.style.display = "block";
 
-        const prevMonthDate = new Date(year, month - 1, 0);
-        while (!isWorkday(prevMonthDate)) {
-            prevMonthDate.setDate(prevMonthDate.getDate() - 1);
-        }
-
-        const deadline = new Date(prevMonthDate.getFullYear(), prevMonthDate.getMonth(), prevMonthDate.getDate(), 12, 0, 0);
+        const deadline = getSubmissionDeadline(year, month, extraHolidays, extraWorkdays);
         const formattedDeadline = `${deadline.getFullYear() - 1911}年${deadline.getMonth() + 1}月${deadline.getDate()}日 中午 12:00`;
 
         msgDiv.style.display = "block";
