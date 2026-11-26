@@ -615,7 +615,7 @@
             .filter(date => date.startsWith(prefix) && !getSchoolBreak(new Date(year, month - 1, parseInt(date.slice(8)))))
             .map(date => `${label(date)}${nationalHolidays[date]}`);
         const lines = [];
-        if (items.length) lines.push(`★ ${month}月供餐異動：${items.join("；")}。`);
+        if (items.length) lines.push(`★ ${month}月供餐出勤說明：${items.join("；")}。`);
         if (holidays.length) lines.push(`本月國定假日不排班：${holidays.join("、")}。`);
         const box = document.getElementById('monthEventNote');
         box.innerText = lines.join("\n");
